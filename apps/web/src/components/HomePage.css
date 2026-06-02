@@ -1,0 +1,91 @@
+.home-page {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 1px;
+  background: var(--bg);
+}
+
+.home-page-thoughts {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+
+.home-page-network {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.home-page-loading,
+.home-page-section-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.home-page-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+}
+
+.home-page-create {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: none;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-md);
+  padding: 40px 60px;
+  cursor: pointer;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.home-page-create:hover {
+  border-color: var(--accent, #646cff);
+  color: var(--text);
+}
+
+.home-page-create-icon {
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.home-page-create-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.home-page-create-input {
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--border);
+  color: var(--text);
+  padding: 8px 4px;
+  outline: none;
+  min-width: 300px;
+  transition: border-color 0.15s;
+}
+
+.home-page-create-input:focus {
+  border-color: var(--accent, #646cff);
+}
+}

@@ -1,0 +1,59 @@
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: var(--sidebar-bg);
+}
+
+.login-card {
+  text-align: center;
+  padding: 48px 40px;
+}
+
+.login-logo {
+  width: 200px;
+  height: 130px;
+  margin: 0 auto 24px;
+  background-color: var(--sidebar-text);
+  -webkit-mask-image: url('/projectbrainlogo.png');
+  mask-image: url('/projectbrainlogo.png');
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.6));
+}
+
+.login-title {
+  font-family: var(--font-body);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin-bottom: 8px;
+}
+
+.login-subtitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--sidebar-muted);
+  margin-bottom: 32px;
+}
+
+.login-btn {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  padding: 10px 24px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.login-btn:hover {
+  background: var(--surface2);
+}

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1780310137360,
+      "tag": "0000_stormy_mercury",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780396537360,
+      "tag": "0001_add_label_is_edge",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780482937360,
+      "tag": "0002_add_colors_table",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,265 @@
+.thoughts-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.thoughts-list-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.thoughts-list-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.thoughts-list-header h2 {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.thoughts-list-title-editable {
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 0 2px;
+  transition: background 0.1s;
+}
+.thoughts-list-title-editable:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.thoughts-list-title-input {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0 2px;
+  width: 100%;
+  min-width: 80px;
+}
+
+/* ─── Node border color picker ────────────────── */
+.thoughts-list-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-color-picker {
+  position: relative;
+}
+
+.node-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.node-color-dot:hover {
+  transform: scale(1.15);
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+.node-color-swatches {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.node-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s, border-color 0.12s;
+}
+
+.node-color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.node-color-swatch--active {
+  border-color: var(--text);
+  transform: scale(1.15);
+}
+
+.thoughts-list-header-body {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thoughts-list-body-editable {
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 1px 2px;
+  transition: background 0.1s;
+}
+.thoughts-list-body-editable:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.thoughts-list-body-input {
+  margin: 4px 0 0;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dim);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 1px 2px;
+  width: 100%;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thoughts-list-header-labels {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.thoughts-list-new {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 16px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.thoughts-list-new:hover {
+  border-color: var(--border2);
+  color: var(--text);
+}
+
+/* ─── Create form ─────────────────────────────── */
+.thoughts-list-create {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.thoughts-list-create-title,
+.thoughts-list-create-body {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.thoughts-list-create-body {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.thoughts-list-create-title:focus,
+.thoughts-list-create-body:focus {
+  border-color: var(--border2);
+}
+
+.thoughts-list-create-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.thoughts-list-create-save,
+.thoughts-list-create-cancel {
+  flex: 1;
+  padding: 8px 12px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.thoughts-list-create-save:hover {
+  border-color: var(--border2);
+  background: var(--surface);
+}
+
+.thoughts-list-create-cancel:hover {
+  border-color: var(--border2);
+}
+
+/* ─── Card stack ──────────────────────────────── */
+.thoughts-list-cards {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 16px 28px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.thoughts-list-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px;
+}
+}

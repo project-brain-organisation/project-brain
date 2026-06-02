@@ -1,0 +1,204 @@
+/* ─── ThoughtCard — matches NoteCard editorial styling.
+ * Structure: .thought-card-top (time + optional title tag),
+ *            .thought-card-text (body).
+ * ──────────────────────────────────────────────────────── */
+
+.thought-card {
+  background: #fefcf9;
+  border: 1px solid rgba(180, 130, 60, 0.55);
+  border-radius: 3px;
+  padding: 10px 10px;
+  position: relative;
+  animation: thoughtCardIn 0.15s ease;
+  transition: background 0.15s, border-color 0.15s;
+}
+@keyframes thoughtCardIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.thought-card:hover { border-color: rgba(180, 130, 60, 0.75); }
+
+/* ─── Action buttons (top-right) ────────────────────── */
+.thought-card-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.thought-card:hover .thought-card-actions { opacity: 1; }
+
+.thought-card-action {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  color: var(--muted);
+  transition: color 0.1s, background 0.1s;
+}
+.thought-card-action:hover {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.05);
+}
+.thought-card-action--delete:hover {
+  color: #c0392b;
+}
+
+/* ─── Top row: time + optional title tag ────────────── */
+.thought-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  flex-wrap: wrap;
+}
+.thought-card-time {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+}
+.thought-card-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  border: 1px solid var(--border2);
+  color: var(--dim);
+  padding: 0 5px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+}
+.thought-card-tag--placeholder {
+  border-style: dashed;
+  color: var(--muted);
+  font-style: italic;
+}
+.thought-card-tag--editing {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  border: 1px solid var(--border2);
+  color: var(--dim);
+  padding: 0 5px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  background: transparent;
+  outline: none;
+  min-width: 60px;
+}
+
+/* ─── Body ─────────────────────────────────────────── */
+.thought-card-text {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+}
+.thought-card-text--editing {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+  width: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0;
+  margin: 0;
+}
+.thought-card-placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ─── Labels row ───────────────────────────────────── */
+.thought-card-labels {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.thought-card-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 2px 7px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--dim);
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s;
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.thought-card-label-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.thought-card-label:hover {
+  border-color: var(--dim);
+  background: var(--surface2);
+}
+.thought-card-label-add {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border2);
+  border-radius: 2px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s;
+  line-height: 1;
+  padding: 0;
+}
+.thought-card-label-add:hover {
+  border-color: var(--dim);
+  color: var(--dim);
+}
+
+/* ─── Mobile — denser cards ─────────────────────────── */
+@media (max-width: 768px) {
+  .thought-card {
+    padding: 8px 10px;
+    border-radius: 4px;
+  }
+  .thought-card-top {
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .thought-card-time { font-size: 8.5px; }
+  .thought-card-tag { font-size: 8.5px; padding: 0 4px; }
+  .thought-card-text {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+}
+}

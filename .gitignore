@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# Packaged builds
+dist/
+
+# Environment variables
+.env
+*.local
+
+# Local user data (personal notes + iCloud app password live here)
+data/
+
+# Logs
+*.log
+server.log
+
+# Large media / binaries not meant for source control
+BRAINVIDEO.mp4
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor junk
+.vscode/
+.idea/
+*.swp
+
+# Environment files
+.env
+.env.local
+
+# Claude agent scratch
+.claude/
+
+# Session / runtime files
+cookies.txt
+ruvector.db
+_sys_real.txt
+
+# Graphify output (contains codebase analysis + API cost data)
+graphify-out/
+
+# Obsidian vault (personal notes)
+obsidian/
+
+# Diagnostic / test scripts that may contain real prompts or keys
+cache-debug.mjs
+check-model.mjs
+token-test.mjs
+extract-sys.mjs

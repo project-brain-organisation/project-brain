@@ -1,0 +1,334 @@
+/* ─── Overlay ──────────────────────────────────────────── */
+.lp-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+  z-index: 900;
+}
+
+/* ─── Dialog — warm eggshell background ────────────────── */
+.lp {
+  background: #f5f0e8;
+  border-radius: 12px;
+  width: 440px;
+  max-height: 560px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 56px rgba(0, 0, 0, 0.18);
+  animation: lpIn 0.14s ease;
+  overflow: visible;
+  padding: 28px;
+}
+@keyframes lpIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ─── Header ───────────────────────────────────────────── */
+.lp-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 0 0 20px;
+}
+.lp-header-text {
+  flex: 1;
+}
+.lp-title {
+  font-family: var(--font-body);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+.lp-desc {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  margin: 0;
+}
+.lp-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+}
+.lp-close:hover {
+  color: var(--text);
+}
+
+/* ─── Label card list ──────────────────────────────────── */
+.lp-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ─── Card wrapper (positions swatch popover) ──────────── */
+.lp-card-wrap {
+  position: relative;
+  z-index: 1;
+}
+.lp-card-wrap:has(.lp-swatch-popover) {
+  z-index: 100;
+}
+
+/* ─── Individual label card — white, padded ────────────── */
+.lp-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 18px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.lp-card:hover {
+  border-color: rgba(0, 0, 0, 0.16);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+.lp-card--active {
+  border-color: rgba(0, 0, 0, 0.18);
+  background: #fdfcfa;
+}
+.lp-card--none {
+  border-style: dashed;
+}
+
+/* ─── Dot (shared between card and new-card) ───────────── */
+.lp-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+}
+.lp-dot--clickable {
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.lp-dot--clickable:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
+}
+
+/* ─── Card label name ──────────────────────────────────── */
+.lp-card-name {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lp-card--none .lp-card-name {
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+/* ─── Edge toggle button ───────────────────────────────── */
+.lp-edge-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.lp-edge-toggle:hover {
+  color: var(--text);
+  border-color: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.03);
+}
+.lp-edge-toggle--on {
+  color: #7b6bb5;
+  border-color: #7b6bb5;
+  background: rgba(123, 107, 181, 0.08);
+}
+.lp-edge-toggle--on:hover {
+  background: rgba(123, 107, 181, 0.14);
+}
+
+/* ─── Card remove (×) button ───────────────────────────── */
+.lp-card-remove {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.1s, background 0.1s;
+  flex-shrink: 0;
+}
+.lp-card-remove:hover {
+  color: #e05555;
+  background: rgba(224, 85, 85, 0.08);
+}
+
+/* ─── New label card (bottom) ──────────────────────────── */
+.lp-new-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 4px;
+  padding: 14px 18px;
+  background: #ffffff;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+}
+
+/* ─── Remove old dot-wrap (no longer needed) ───────────── */
+
+/* ─── Swatch popover ───────────────────────────────────── */
+.lp-swatch-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 18px;
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  animation: lpSwatchIn 0.1s ease;
+}
+@keyframes lpSwatchIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Delete confirmation bar ──────────────────────────── */
+.lp-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: #fef6f4;
+  border: 1px solid rgba(224, 85, 85, 0.25);
+  border-radius: 8px;
+  animation: lpIn 0.14s ease;
+}
+.lp-confirm-text {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.4;
+}
+.lp-confirm-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.lp-confirm-cancel,
+.lp-confirm-delete {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.lp-confirm-cancel {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text);
+}
+.lp-confirm-cancel:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+.lp-confirm-delete {
+  background: #e05555;
+  color: #fff;
+}
+.lp-confirm-delete:hover {
+  background: #c94444;
+}
+.lp-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.1s, transform 0.1s;
+}
+.lp-swatch:hover {
+  transform: scale(1.15);
+}
+.lp-swatch--active {
+  border-color: var(--text);
+  transform: scale(1.15);
+}
+
+/* ─── New label text input ─────────────────────────────── */
+.lp-new-input {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+}
+.lp-new-input::placeholder {
+  color: var(--muted);
+}
+.lp-new-input:focus {
+  outline: none;
+}
+
+/* ─── Add button ───────────────────────────────────────── */
+.lp-new-add {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  padding: 6px 16px;
+  background: var(--text);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.1s;
+}
+.lp-new-add:hover {
+  opacity: 0.85;
+}

@@ -1,0 +1,422 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { createAddLabelToThoughtTool } from './add-label-to-thought-tool.js';
+import { createClearThoughtColorTool } from './clear-thought-color-tool.js';
+import { createCreateLabelTool } from './create-label-tool.js';
+import { createCreateProjectTool } from './create-project-tool.js';
+import { createCreateThoughtTool } from './create-thought-tool.js';
+import { createEditThoughtTool } from './edit-thought-tool.js';
+import { createElaborateTool } from './elaborate-tool.js';
+import { createGetThoughtLabelsTool } from './get-thought-labels-tool.js';
+import { createListLabelsTool } from './list-labels-tool.js';
+import { createListThoughtsTool } from './list-thoughts-tool.js';
+import { createRemoveLabelFromThoughtTool } from './remove-label-from-thought-tool.js';
+import { createRemoveLabelTool } from './remove-label-tool.js';
+import { createRemoveThoughtTool } from './remove-thought-tool.js';
+import { createSetLabelEdgeTool } from './set-label-edge-tool.js';
+import { createSetThoughtColorTool } from './set-thought-color-tool.js';
+import { createThoughtToPromptTool } from './thought-to-prompt-tool.js';
+import { createUpdateLabelTool } from './update-label-tool.js';
+
+const uuidA = '550e8400-e29b-41d4-a716-446655440000';
+const uuidB = '4de89e56-7b8a-4d89-adf5-dbf84f8f4123';
+const okResult = { ok: true as const, status: 200, data: { ok: true } };
+
+describe('elaborate tool', () => {
+  it('parses and executes with expected args', async () => {
+    let captured: { userId?: string; chunkId?: string; scope?: string } = {};
+    const tool = createElaborateTool({
+      elaborate: async (userId, chunkId, scope) => {
+        captured = { userId, chunkId, scope };
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ chunkId: uuidA });
+    const result = await tool.execute({ userId: 'u1', scope: 'project-1' }, args);
+
+    assert.equal(tool.name, 'elaborate');
+    assert.equal(captured.userId, 'u1');
+    assert.equal(captured.chunkId, uuidA);
+    assert.equal(captured.scope, 'project-1');
+    assert.equal(result.ok, true);
+  });
+
+  it('rejects invalid chunk id', () => {
+    const tool = createElaborateTool({ elaborate: async () => okResult });
+    assert.throws(() => tool.parseArguments({ chunkId: 'bad-id' }));
+  });
+});
+
+describe('thought_to_prompt tool', () => {
+  it('parses and executes with expected args', async () => {
+    let capturedThoughtId: string | undefined;
+    const tool = createThoughtToPromptTool({
+      thoughtToPrompt: async (_userId, thoughtId) => {
+        capturedThoughtId = thoughtId;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ thoughtId: uuidA });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'thought_to_prompt');
+    assert.equal(capturedThoughtId, uuidA);
+  });
+
+  it('rejects missing thoughtId', () => {
+    const tool = createThoughtToPromptTool({ thoughtToPrompt: async () => okResult });
+    assert.throws(() => tool.parseArguments({}));
+  });
+});
+
+describe('create_project tool', () => {
+  it('parses and executes with expected args', async () => {
+    let captured: { title?: string; body?: string } = {};
+    const tool = createCreateProjectTool({
+      createProject: async (_userId, title, body) => {
+        captured = { title, body };
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ title: 'New Project', body: 'Hello' });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'create_project');
+    assert.equal(captured.title, 'New Project');
+    assert.equal(captured.body, 'Hello');
+  });
+
+  it('rejects empty title', () => {
+    const tool = createCreateProjectTool({ createProject: async () => okResult });
+    assert.throws(() => tool.parseArguments({ title: '' }));
+  });
+});
+
+describe('list_thoughts tool', () => {
+  it('parses optional filters and executes', async () => {
+    let captured: { parentId?: string; projectId?: string } | undefined;
+    const tool = createListThoughtsTool({
+      listThoughts: async (_userId, params) => {
+        captured = params;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ parentId: uuidA, projectId: uuidB });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'list_thoughts');
+    assert.equal(captured?.parentId, uuidA);
+    assert.equal(captured?.projectId, uuidB);
+  });
+
+  it('rejects invalid parentId', () => {
+    const tool = createListThoughtsTool({ listThoughts: async () => okResult });
+    assert.throws(() => tool.parseArguments({ parentId: 'nope' }));
+  });
+});
+
+describe('create_thought tool', () => {
+  it('parses and executes', async () => {
+    let capturedBody: string | undefined;
+    const tool = createCreateThoughtTool({
+      createThought: async (_userId, params) => {
+        capturedBody = params.body;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ body: 'Some thought', title: 'T', parentId: uuidA });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'create_thought');
+    assert.equal(capturedBody, 'Some thought');
+  });
+
+  it('rejects missing body', () => {
+    const tool = createCreateThoughtTool({ createThought: async () => okResult });
+    assert.throws(() => tool.parseArguments({ title: 'x' }));
+  });
+});
+
+describe('edit_thought tool', () => {
+  it('parses and executes', async () => {
+    let capturedThoughtId: string | undefined;
+    const tool = createEditThoughtTool({
+      editThought: async (_userId, params) => {
+        capturedThoughtId = params.thoughtId;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ thoughtId: uuidA, title: 'Updated' });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'edit_thought');
+    assert.equal(capturedThoughtId, uuidA);
+  });
+
+  it('rejects missing thoughtId', () => {
+    const tool = createEditThoughtTool({ editThought: async () => okResult });
+    assert.throws(() => tool.parseArguments({ body: 'x' }));
+  });
+});
+
+describe('remove_thought tool', () => {
+  it('parses and executes', async () => {
+    let capturedThoughtId: string | undefined;
+    const tool = createRemoveThoughtTool({
+      removeThought: async (_userId, thoughtId) => {
+        capturedThoughtId = thoughtId;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ thoughtId: uuidA });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'remove_thought');
+    assert.equal(capturedThoughtId, uuidA);
+  });
+
+  it('rejects invalid thoughtId', () => {
+    const tool = createRemoveThoughtTool({ removeThought: async () => okResult });
+    assert.throws(() => tool.parseArguments({ thoughtId: 'bad' }));
+  });
+});
+
+describe('list_labels tool', () => {
+  it('parses and executes', async () => {
+    let capturedProjectId: string | undefined;
+    const tool = createListLabelsTool({
+      listLabels: async (_userId, projectId) => {
+        capturedProjectId = projectId;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ projectId: uuidA });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'list_labels');
+    assert.equal(capturedProjectId, uuidA);
+  });
+
+  it('rejects invalid projectId', () => {
+    const tool = createListLabelsTool({ listLabels: async () => okResult });
+    assert.throws(() => tool.parseArguments({ projectId: 'bad' }));
+  });
+});
+
+describe('create_label tool', () => {
+  it('parses and executes', async () => {
+    let capturedName: string | undefined;
+    const tool = createCreateLabelTool({
+      createLabel: async (_userId, params) => {
+        capturedName = params.name;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ name: 'Priority', color: '#A1B2C3', projectId: uuidA });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'create_label');
+    assert.equal(capturedName, 'Priority');
+  });
+
+  it('rejects invalid color', () => {
+    const tool = createCreateLabelTool({ createLabel: async () => okResult });
+    assert.throws(() => tool.parseArguments({ name: 'x', color: 'red' }));
+  });
+});
+
+describe('update_label tool', () => {
+  it('parses and executes', async () => {
+    let capturedLabelId: string | undefined;
+    const tool = createUpdateLabelTool({
+      updateLabel: async (_userId, params) => {
+        capturedLabelId = params.labelId;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ labelId: uuidA, isEdge: true });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'update_label');
+    assert.equal(capturedLabelId, uuidA);
+  });
+
+  it('rejects invalid labelId', () => {
+    const tool = createUpdateLabelTool({ updateLabel: async () => okResult });
+    assert.throws(() => tool.parseArguments({ labelId: 'bad' }));
+  });
+});
+
+describe('remove_label tool', () => {
+  it('parses and executes', async () => {
+    let capturedLabelId: string | undefined;
+    const tool = createRemoveLabelTool({
+      removeLabel: async (_userId, labelId) => {
+        capturedLabelId = labelId;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ labelId: uuidA });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'remove_label');
+    assert.equal(capturedLabelId, uuidA);
+  });
+
+  it('rejects invalid labelId', () => {
+    const tool = createRemoveLabelTool({ removeLabel: async () => okResult });
+    assert.throws(() => tool.parseArguments({ labelId: 'bad' }));
+  });
+});
+
+describe('add_label_to_thought tool', () => {
+  it('parses and executes', async () => {
+    let captured: { thoughtId?: string; labelId?: string } = {};
+    const tool = createAddLabelToThoughtTool({
+      addLabelToThought: async (_userId, params) => {
+        captured = params;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ thoughtId: uuidA, labelId: uuidB });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'add_label_to_thought');
+    assert.equal(captured.thoughtId, uuidA);
+    assert.equal(captured.labelId, uuidB);
+  });
+
+  it('rejects invalid ids', () => {
+    const tool = createAddLabelToThoughtTool({ addLabelToThought: async () => okResult });
+    assert.throws(() => tool.parseArguments({ thoughtId: 'bad', labelId: uuidB }));
+  });
+});
+
+describe('remove_label_from_thought tool', () => {
+  it('parses and executes', async () => {
+    let captured: { thoughtId?: string; labelId?: string } = {};
+    const tool = createRemoveLabelFromThoughtTool({
+      removeLabelFromThought: async (_userId, params) => {
+        captured = params;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ thoughtId: uuidA, labelId: uuidB });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'remove_label_from_thought');
+    assert.equal(captured.thoughtId, uuidA);
+    assert.equal(captured.labelId, uuidB);
+  });
+
+  it('rejects invalid labelId', () => {
+    const tool = createRemoveLabelFromThoughtTool({ removeLabelFromThought: async () => okResult });
+    assert.throws(() => tool.parseArguments({ thoughtId: uuidA, labelId: 'bad' }));
+  });
+});
+
+describe('get_thought_labels tool', () => {
+  it('parses and executes', async () => {
+    let capturedThoughtId: string | undefined;
+    const tool = createGetThoughtLabelsTool({
+      getThoughtLabels: async (_userId, thoughtId) => {
+        capturedThoughtId = thoughtId;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ thoughtId: uuidA });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'get_thought_labels');
+    assert.equal(capturedThoughtId, uuidA);
+  });
+
+  it('rejects invalid thoughtId', () => {
+    const tool = createGetThoughtLabelsTool({ getThoughtLabels: async () => okResult });
+    assert.throws(() => tool.parseArguments({ thoughtId: 'bad' }));
+  });
+});
+
+describe('set_label_edge tool', () => {
+  it('parses and executes', async () => {
+    let captured: { labelId?: string; isEdge?: boolean } = {};
+    const tool = createSetLabelEdgeTool({
+      setLabelEdge: async (_userId, labelId, isEdge) => {
+        captured = { labelId, isEdge };
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ labelId: uuidA, isEdge: true });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'set_label_edge');
+    assert.equal(captured.labelId, uuidA);
+    assert.equal(captured.isEdge, true);
+  });
+
+  it('rejects missing isEdge', () => {
+    const tool = createSetLabelEdgeTool({ setLabelEdge: async () => okResult });
+    assert.throws(() => tool.parseArguments({ labelId: uuidA }));
+  });
+});
+
+describe('set_thought_color tool', () => {
+  it('parses and executes', async () => {
+    let capturedHex: string | undefined;
+    const tool = createSetThoughtColorTool({
+      setThoughtColor: async (_userId, _thoughtId, hex) => {
+        capturedHex = hex;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ thoughtId: uuidA, hex: '#112233' });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'set_thought_color');
+    assert.equal(capturedHex, '#112233');
+  });
+
+  it('rejects invalid hex', () => {
+    const tool = createSetThoughtColorTool({ setThoughtColor: async () => okResult });
+    assert.throws(() => tool.parseArguments({ thoughtId: uuidA, hex: '#12345' }));
+  });
+});
+
+describe('clear_thought_color tool', () => {
+  it('parses and executes', async () => {
+    let capturedThoughtId: string | undefined;
+    const tool = createClearThoughtColorTool({
+      clearThoughtColor: async (_userId, thoughtId) => {
+        capturedThoughtId = thoughtId;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ thoughtId: uuidA });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(tool.name, 'clear_thought_color');
+    assert.equal(capturedThoughtId, uuidA);
+  });
+
+  it('rejects invalid thoughtId', () => {
+    const tool = createClearThoughtColorTool({ clearThoughtColor: async () => okResult });
+    assert.throws(() => tool.parseArguments({ thoughtId: 'bad' }));
+  });
+});
