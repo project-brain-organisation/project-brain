@@ -11,7 +11,11 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { LabelsService } from './labels.service';
-import { CreateLabelDto } from './dto/create-label.dto';
+import {
+  ZodValidationPipe,
+  createLabelSchema,
+  type CreateLabelRequest,
+} from '../validation';
 import { UpdateLabelDto } from './dto/update-label.dto';
 
 @Controller('workspace/labels')
@@ -20,7 +24,10 @@ export class LabelsController {
   constructor(private readonly labelsService: LabelsService) {}
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreateLabelDto) {
+  create(
+    @Req() req: any,
+    @Body(new ZodValidationPipe(createLabelSchema)) dto: CreateLabelRequest,
+  ) {
     return this.labelsService.create(req.user.sub, dto);
   }
 

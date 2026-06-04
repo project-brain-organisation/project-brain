@@ -13,8 +13,29 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ThoughtsService } from './thoughts.service';
-import { CreateThoughtDto } from './dto/create-thought.dto';
-import { UpdateThoughtDto } from './dto/update-thought.dto';
+
+// NOTE (step 04-01): the class-validator DTOs were removed. Validation for the
+// active workspace routes now lives in workspace/validation (Zod). These legacy
+// `/thoughts` routes are slated for removal/rewiring in step 05-01; until then
+// they accept plain request shapes (no body validation on these deprecated routes).
+interface CreateThoughtDto {
+  body?: string;
+  title?: string;
+  parentId?: string;
+  isRoot?: boolean;
+  canvasX?: number;
+  canvasY?: number;
+}
+
+interface UpdateThoughtDto {
+  body?: string;
+  title?: string;
+  parentId?: string;
+  canvasX?: number;
+  canvasY?: number;
+  width?: number;
+  height?: number;
+}
 
 @Controller('thoughts')
 @UseGuards(JwtAuthGuard)

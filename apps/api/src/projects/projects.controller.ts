@@ -12,6 +12,11 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
+import {
+  ZodValidationPipe,
+  createProjectSchema,
+  type CreateProjectRequest,
+} from '../workspace/validation';
 
 @Controller('projects')
 @UseGuards(JwtAuthGuard)
@@ -29,7 +34,10 @@ export class ProjectsController {
   }
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreateProjectDto) {
+  create(
+    @Req() req: any,
+    @Body(new ZodValidationPipe(createProjectSchema)) dto: CreateProjectRequest,
+  ) {
     return this.projectsService.create(req.user.sub, dto);
   }
 

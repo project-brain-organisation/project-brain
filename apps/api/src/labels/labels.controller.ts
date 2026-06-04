@@ -13,9 +13,26 @@ import {
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { LabelsService } from './labels.service';
-import { CreateLabelDto } from './dto/create-label.dto';
-import { UpdateLabelDto } from './dto/update-label.dto';
-import { AssignLabelDto } from './dto/assign-label.dto';
+
+// NOTE (step 04-01): the class-validator DTOs were removed. Validation for the
+// active workspace routes now lives in workspace/validation (Zod). These legacy
+// `/labels` routes are slated for removal/rewiring in step 05-01; until then they
+// accept plain request shapes (no body validation on these deprecated routes).
+interface CreateLabelDto {
+  name: string;
+  color?: string;
+  projectId?: string;
+}
+
+interface UpdateLabelDto {
+  name?: string;
+  color?: string;
+  isEdge?: boolean;
+}
+
+interface AssignLabelDto {
+  labelId: string;
+}
 
 @Controller('labels')
 @UseGuards(JwtAuthGuard)

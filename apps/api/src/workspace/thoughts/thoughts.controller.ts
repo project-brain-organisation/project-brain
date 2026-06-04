@@ -11,7 +11,11 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ThoughtsService } from './thoughts.service';
-import { CreateThoughtDto } from './dto/create-thought.dto';
+import {
+  ZodValidationPipe,
+  createThoughtSchema,
+  type CreateThoughtRequest,
+} from '../validation';
 import { UpdateThoughtDto } from './dto/update-thought.dto';
 
 @Controller('workspace/thoughts')
@@ -20,7 +24,10 @@ export class ThoughtsController {
   constructor(private readonly thoughtsService: ThoughtsService) {}
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreateThoughtDto) {
+  create(
+    @Req() req: any,
+    @Body(new ZodValidationPipe(createThoughtSchema)) dto: CreateThoughtRequest,
+  ) {
     return this.thoughtsService.create(req.user.sub, dto);
   }
 

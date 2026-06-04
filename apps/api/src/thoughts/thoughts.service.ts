@@ -4,8 +4,25 @@ import { createHash } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { thoughts, chunks, thoughtLabels, labels } from '../database/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
-import { CreateThoughtDto } from './dto/create-thought.dto';
-import { UpdateThoughtDto } from './dto/update-thought.dto';
+// Legacy request shapes (class-validator DTOs removed in step 04-01). These
+// deprecated `/thoughts` routes are rewired in step 05-01.
+interface CreateThoughtDto {
+  body?: string;
+  title?: string;
+  parentId?: string;
+  isRoot?: boolean;
+  canvasX?: number;
+  canvasY?: number;
+}
+interface UpdateThoughtDto {
+  body?: string;
+  title?: string;
+  parentId?: string;
+  canvasX?: number;
+  canvasY?: number;
+  width?: number;
+  height?: number;
+}
 import { EmbeddingService } from '../embedding/embedding.service';
 import { ChunkingService } from '../chunking/chunking.service';
 

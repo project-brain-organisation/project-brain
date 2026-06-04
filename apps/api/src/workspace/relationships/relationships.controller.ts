@@ -11,7 +11,11 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RelationshipsService } from './relationships.service';
-import { CreateRelationshipDto } from './dto/create-relationship.dto';
+import {
+  ZodValidationPipe,
+  createRelationshipSchema,
+  type CreateRelationshipRequest,
+} from '../validation';
 
 @Controller('workspace/relationships')
 @UseGuards(JwtAuthGuard)
@@ -19,7 +23,10 @@ export class RelationshipsController {
   constructor(private readonly relationshipsService: RelationshipsService) {}
 
   @Post()
-  create(@Req() req: any, @Body() dto: CreateRelationshipDto) {
+  create(
+    @Req() req: any,
+    @Body(new ZodValidationPipe(createRelationshipSchema)) dto: CreateRelationshipRequest,
+  ) {
     return this.relationshipsService.create(req.user.sub, dto);
   }
 
