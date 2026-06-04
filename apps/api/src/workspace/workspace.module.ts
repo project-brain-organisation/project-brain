@@ -5,11 +5,13 @@ import { ThoughtsService } from './thoughts/thoughts.service';
 import { ThoughtsController } from './thoughts/thoughts.controller';
 import { LabelsService } from './labels/labels.service';
 import { LabelsController } from './labels/labels.controller';
+import { RelationshipsService } from './relationships/relationships.service';
+import { RelationshipsController } from './relationships/relationships.controller';
 
 @Module({
   imports: [DatabaseModule, ProjectsModule],
-  providers: [ThoughtsService, LabelsService],
-  controllers: [ThoughtsController, LabelsController],
-  exports: [ThoughtsService, LabelsService],
+  providers: [ThoughtsService, LabelsService, RelationshipsService],
+  controllers: [ThoughtsController, LabelsController, RelationshipsController],
+  exports: [ThoughtsService, LabelsService, RelationshipsService],
 })
 export class WorkspaceModule {}
