@@ -10,6 +10,7 @@ import { ColorsModule } from './colors/colors.module';
 import { InternalMcpModule } from './internal-mcp/internal-mcp.module';
 import { McpEventsModule } from './mcp-events/mcp-events.module';
 import { WorkspaceModule } from './workspace/workspace.module';
+import { ProjectsModule } from './projects/projects.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { WorkspaceModule } from './workspace/workspace.module';
     InternalMcpModule,
     McpEventsModule,
     WorkspaceModule,
+    ProjectsModule,
   ],
 })
 export class AppModule {}
