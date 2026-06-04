@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import { drizzle, NeonDatabase } from 'drizzle-orm/neon-serverless';
 import ws from 'ws';
-import * as schema from './schema';
+import * as schema from './schema/index';
 
 neonConfig.webSocketConstructor = ws;
 
