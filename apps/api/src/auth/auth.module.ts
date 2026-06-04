@@ -7,6 +7,7 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { McpAccessTokenStrategy } from './strategies/mcp-access-token.strategy';
 import { McpAccessTokenGuard } from './guards/mcp-access-token.guard';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { McpAccessTokenGuard } from './guards/mcp-access-token.guard';
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '30d' },
     }),
+    UsersModule,
   ],
   controllers: [AuthController],
   providers: [

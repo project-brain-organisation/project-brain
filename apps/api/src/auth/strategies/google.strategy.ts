@@ -24,6 +24,6 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
       accessToken,
       refreshToken,
     });
-    done(null, user);
+    done(null, user ?? undefined);
   }
 }

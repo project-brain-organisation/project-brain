@@ -4,11 +4,11 @@ import {
   credentials,
   mcpAuthCodes,
   mcpRefreshTokens,
-  users,
 } from '../database/schema';
 import { eq, and } from 'drizzle-orm';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'node:crypto';
+import { UsersService } from '../users/users.service';
 
 interface GoogleProfile {
   id: string;
@@ -27,6 +27,7 @@ export class AuthService {
   constructor(
     private readonly db: DatabaseService,
     private readonly jwt: JwtService,
+    private readonly usersService: UsersService,
   ) {}
 
   async validateGoogleUser(profile: GoogleProfile, tokens: GoogleTokens) {
@@ -53,21 +54,13 @@ export class AuthService {
         })
         .where(eq(credentials.id, existing.id));
 
-      const [user] = await this.db.db
-        .select()
-        .from(users)
-        .where(eq(users.id, existing.userId))
-        .limit(1);
-      return user;
+      return this.usersService.findById(existing.userId);
     }
 
     const username =
       profile.displayName || profile.emails?.[0]?.value || 'User';
 
-    const [user] = await this.db.db
-      .insert(users)
-      .values({ username })
-      .returning();
+    const user = await this.usersService.create({ username });
 
     await this.db.db.insert(credentials).values({
       userId: user.id,
@@ -98,12 +91,7 @@ export class AuthService {
   }
 
   async findUserById(userId: string) {
-    const [user] = await this.db.db
-      .select()
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-    return user ?? null;
+    return this.usersService.findById(userId);
   }
 
   private mcpAccessTokenSecret(): string {
