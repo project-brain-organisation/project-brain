@@ -16,6 +16,17 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ThoughtsService } from '../../../src/workspace/thoughts/thoughts.service';
 import type { DatabaseService } from '../../../src/database/database.service';
 import type { ProjectsService } from '../../../src/projects/projects.service';
+import type { PipelineService } from '../../../src/workspace/pipeline/pipeline.service';
+
+// Pipeline is a driven collaborator of ThoughtsService — fire-and-forget chunk/embed.
+// Stubbed at the boundary; these unit tests assert thought persistence, not the pipeline.
+function makePipelineService(): PipelineService {
+  return {
+    chunkAndEmbed: jest.fn().mockResolvedValue(undefined),
+    rechunk: jest.fn().mockResolvedValue(undefined),
+    semanticSearch: jest.fn().mockResolvedValue([]),
+  } as unknown as PipelineService;
+}
 
 // ── Fluent Drizzle mock helpers ────────────────────────────────────
 
@@ -120,7 +131,7 @@ describe('WorkspaceThoughtsService', () => {
         }),
       };
       const dbService = { db: drizzle } as unknown as DatabaseService;
-      const service = new ThoughtsService(dbService, projectsService);
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService());
 
       await service.create('user-1', { projectId: 'proj-1', body: 'hello' });
 
@@ -144,7 +155,7 @@ describe('WorkspaceThoughtsService', () => {
       };
       const dbService = { db: drizzle } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
-      const service = new ThoughtsService(dbService, projectsService);
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService());
 
       const result = await service.create('user-1', { projectId: 'proj-1', body: 'hello' });
 
@@ -171,7 +182,7 @@ describe('WorkspaceThoughtsService', () => {
       };
       const dbService = { db: drizzle } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
-      const service = new ThoughtsService(dbService, projectsService);
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService());
 
       await expect(
         service.create('user-1', { projectId: 'proj-1', body: 'hello' }),
@@ -183,7 +194,7 @@ describe('WorkspaceThoughtsService', () => {
         Promise.reject(new ForbiddenException('Project not found or access denied')),
       );
       const dbService = makeDbService();
-      const service = new ThoughtsService(dbService, projectsService);
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService());
 
       await expect(
         service.create('intruder', { projectId: 'proj-1', body: 'hack' }),
@@ -226,7 +237,7 @@ describe('WorkspaceThoughtsService', () => {
       };
       const dbService = { db: drizzle } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
-      const service = new ThoughtsService(dbService, projectsService);
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService());
 
       const result = await service.setColor('user-1', 'thought-1', '#ff0000');
 
@@ -262,7 +273,7 @@ describe('WorkspaceThoughtsService', () => {
       };
       const dbService = { db: drizzle } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
-      const service = new ThoughtsService(dbService, projectsService);
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService());
 
       const result = await service.clearColor('user-1', 'thought-1');
 
@@ -300,7 +311,7 @@ describe('WorkspaceThoughtsService', () => {
       };
       const dbService = { db: drizzle } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
-      const service = new ThoughtsService(dbService, projectsService);
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService());
 
       const result = await service.remove('user-1', 'thought-1');
 
@@ -328,7 +339,7 @@ describe('WorkspaceThoughtsService', () => {
       };
       const dbService = { db: drizzle } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
-      const service = new ThoughtsService(dbService, projectsService);
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService());
 
       await expect(service.remove('user-1', 'nonexistent')).rejects.toThrow(NotFoundException);
     });
