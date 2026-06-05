@@ -13,6 +13,10 @@
  *   B1: chunkAndEmbed persists chunks with project_id (and NO user_id) then updates vectors
  *   B2: semanticSearch is ownership-gated BEFORE any DB access
  *   B3: semanticSearch scopes the similarity query by the owning project_id
+ *
+ * Note (step 02-02): DatabaseService double updated to include asUser() that
+ * routes callbacks through the same drizzle tx double, satisfying the RLS wiring
+ * added in step 02-02 without changing the behavioral assertions.
  */
 
 import { ForbiddenException } from '@nestjs/common';
@@ -64,10 +68,17 @@ function makePersistenceDb() {
     execute: jest.fn().mockResolvedValue({ rows: [] }),
   };
 
+  // asUser routes the callback through the same drizzle tx double so that
+  // step-02-02 RLS wiring in PipelineService is satisfied without a live DB.
+  const asUser = jest.fn(
+    (_userId: string, cb: (tx: typeof drizzle) => Promise<unknown>) => cb(drizzle),
+  );
+
   return {
-    dbService: { db: drizzle } as unknown as DatabaseService,
+    dbService: { db: drizzle, asUser } as unknown as DatabaseService,
     insertValues,
     drizzle,
+    asUser,
   };
 }
 
@@ -78,11 +89,11 @@ describe('WorkspacePipelineService', () => {
 
   describe('chunkAndEmbed', () => {
     it.each([
-      { projectId: 'proj-1', thoughtId: 'thought-1', body: 'hello world' },
-      { projectId: 'proj-42', thoughtId: 'thought-9', body: 'a longer body of text' },
+      { projectId: 'proj-1', thoughtId: 'thought-1', body: 'hello world', ownerId: 'owner-a' },
+      { projectId: 'proj-42', thoughtId: 'thought-9', body: 'a longer body of text', ownerId: 'owner-b' },
     ])(
       'persists chunks scoped by project_id (%o) with no user_id column',
-      async ({ projectId, thoughtId, body }) => {
+      async ({ projectId, thoughtId, body, ownerId }) => {
         const { dbService, insertValues } = makePersistenceDb();
         const chunking = new ChunkingService();
         const expectedChunks = chunking.chunk(body);
@@ -91,13 +102,13 @@ describe('WorkspacePipelineService', () => {
 
         const service = new PipelineService(dbService, embedding, chunking, projects);
 
-        await service.chunkAndEmbed(projectId, thoughtId, body);
+        await service.chunkAndEmbed(projectId, thoughtId, body, ownerId);
 
         // One inserted row per chunk
         expect(insertValues).toHaveLength(expectedChunks.length);
         for (const row of insertValues) {
           expect(row).toMatchObject({ projectId, thoughtId });
-          // Persistence is project-scoped, NOT user-scoped
+          // Persistence is project-scoped; no userId column (ownerId is the RLS param)
           expect(row).not.toHaveProperty('userId');
         }
         // Embedding driven port called with the chunk texts

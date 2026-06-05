@@ -10,9 +10,9 @@ import { EmbeddingService } from './embedding.service';
  * PipelineService — chunk → persist (project-scoped) → embed → update vectors,
  * plus project-scoped, ownership-gated semantic search.
  *
- * Persistence is scoped by project_id (entities.id of the owning project),
- * NEVER by user_id. The thought's project is supplied by the caller (available
- * as entities.projectId for the thought's id).
+ * Persistence is scoped by project_id (entities.id of the owning project).
+ * All DB writes run inside DatabaseService.asUser(ownerId) so that RLS
+ * policies see the correct app.current_user_id for the transaction.
  */
 @Injectable()
 export class PipelineService {
@@ -26,10 +26,10 @@ export class PipelineService {
   ) {}
 
   /**
-   * Re-chunk + re-embed a thought body. Persists chunks scoped to the owning
-   * project_id then back-fills vector embeddings. Intended to be called
-   * fire-and-forget by ThoughtsService create/update with a logged catch so the
-   * caller returns without awaiting embedding.
+   * Re-chunk + re-embed a thought body. Persists chunks inside asUser(ownerId)
+   * so RLS withCheck constraints are satisfied. Embeddings are computed outside
+   * the transaction (no DB write, pure HTTP call) then written back via a second
+   * asUser transaction. Intended to be called fire-and-forget by ThoughtsService.
    */
   async chunkAndEmbed(
     projectId: string,
@@ -48,16 +48,23 @@ export class PipelineService {
       chunkIndex: index,
     }));
 
-    await this.db.db.insert(chunks).values(chunkRows);
+    // Insert chunks under the owner's tenant context so RLS withCheck passes.
+    await this.db.asUser(ownerId, async (tx) => {
+      await tx.insert(chunks).values(chunkRows);
+    });
 
+    // Embedding is a pure HTTP call — no DB write, runs outside any transaction.
     const vectors = await this.embeddingService.embed(chunkTexts);
 
-    for (let index = 0; index < chunkTexts.length; index++) {
-      await this.db.db
-        .update(chunks)
-        .set({ vectorEmbedding: vectors[index] })
-        .where(and(eq(chunks.thoughtId, thoughtId), eq(chunks.chunkIndex, index)));
-    }
+    // Back-fill vector embeddings under the same tenant context.
+    await this.db.asUser(ownerId, async (tx) => {
+      for (let index = 0; index < chunkTexts.length; index++) {
+        await tx
+          .update(chunks)
+          .set({ vectorEmbedding: vectors[index] })
+          .where(and(eq(chunks.thoughtId, thoughtId), eq(chunks.chunkIndex, index)));
+      }
+    });
 
     this.logger.log(
       `Chunked+embedded thought ${thoughtId} into ${chunkTexts.length} chunks (project ${projectId})`,
@@ -66,7 +73,9 @@ export class PipelineService {
 
   /**
    * Re-chunk a thought after a body edit: drop existing chunks then re-run the
-   * pipeline. Preserves async/background behaviour at the call site.
+   * pipeline. All DB writes (delete + re-insert + vector update) run under
+   * asUser(ownerId) to satisfy RLS. Preserves async/background behaviour at the
+   * call site.
    */
   async rechunk(
     projectId: string,
@@ -74,7 +83,9 @@ export class PipelineService {
     body: string,
     ownerId: string,
   ): Promise<void> {
-    await this.db.db.delete(chunks).where(eq(chunks.thoughtId, thoughtId));
+    await this.db.asUser(ownerId, async (tx) => {
+      await tx.delete(chunks).where(eq(chunks.thoughtId, thoughtId));
+    });
     await this.chunkAndEmbed(projectId, thoughtId, body, ownerId);
   }
 
