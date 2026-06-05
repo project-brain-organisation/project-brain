@@ -1,0 +1,165 @@
+{
+  "roadmap": {
+    "project_id": "row-level-security",
+    "created_at": "2026-06-05T10:59:11Z",
+    "total_steps": 8
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Denormalize owner_id onto subtype tables (schema + safe migration)",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Add owner_id column + index to the four subtype schemas",
+          "criteria": [
+            "thoughts, labels, relationships, chunks each export ownerId ('owner_id', uuid, notNull) referencing users.id onDelete cascade, mirroring projectMeta.ownerId",
+            "each table declares a btree index idx_<table>_owner_id on owner_id (idx_thoughts_owner_id, idx_labels_owner_id, idx_relationships_owner_id, idx_chunks_owner_id)",
+            "each schema header comment reframes owner_id as a denormalized immutable copy of the project's owner, carried locally so RLS enforces ownership without joining project_meta",
+            "owner_id column/index shape matches projectMeta.ownerId and the project_id denormalization exactly (notNull, FK users.id cascade, single-column btree)",
+            "EXEMPT FROM PARADIGM: static schema metadata, not runtime behavior; backfill-correctness property compensates at step 01-02"
+          ],
+          "test_file": "apps/api/test/schema/owner-id-denormalization.spec.ts",
+          "scenario_name": "all four scoped tables expose immutable denormalized owner_id with idx_<table>_owner_id index"
+        },
+        {
+          "id": "01-02",
+          "name": "Migration: add, backfill, constrain owner_id; stamp on insert",
+          "criteria": [
+            "new migration adds nullable owner_id (uuid) to thoughts, labels, relationships, chunks, then backfills via subtype.project_id = project_meta.id -> project_meta.owner_id before any NOT NULL",
+            "per-table statement order is ADD nullable, UPDATE backfill, SET NOT NULL, ADD FK users.id cascade, CREATE INDEX idx_<table>_owner_id, so existing rows never violate NOT NULL",
+            "thoughts/labels/relationships create() and pipeline chunkAndEmbed() stamp owner_id (resolved once from the project owner) on their INSERT within the existing transaction; no method UPDATEs owner_id",
+            "EXEMPT FROM PARADIGM: exact golden DDL; compensating fast-check property (strict=true) asserts every backfilled subtype.owner_id equals its project_meta.owner_id over generated fixtures"
+          ],
+          "test_file": "apps/api/test/schema/owner-id-backfill.spec.ts",
+          "scenario_name": "Property: backfilled subtype owner_id equals owning project_meta owner_id for every row"
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Non-owner DB role + per-request tenant context wiring",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Create non-owner app_user login role; connect runtime as it",
+          "criteria": [
+            "new migration issues CREATE ROLE app_user LOGIN, GRANT USAGE on schema + sequences, and GRANT SELECT/INSERT/UPDATE/DELETE on the six app tables; app_user owns nothing so RLS applies without FORCE",
+            "schema declares pgRole('app_user').existing() and exports it so drizzle-kit references the role rather than recreating it",
+            "DatabaseService connects the runtime Pool via a separate app_user string (DATABASE_URL_APP); drizzle.config.ts and migrations keep the owner DATABASE_URL",
+            "a connectivity check confirms app_user runs DML on the app tables and is not a member of the owner role, so it cannot bypass RLS",
+            "EXEMPT FROM PARADIGM: static role grants and connection wiring; the cross-tenant property at 03-03 is the compensating behavioral proof"
+          ],
+          "test_file": "apps/api/test/database/app-user-role.spec.ts",
+          "scenario_name": "app_user role holds only DML grants, owns no tables, and runtime connects as app_user"
+        },
+        {
+          "id": "02-02",
+          "name": "Add asUser/asSystem tenant-context wrappers via AsyncLocalStorage",
+          "criteria": [
+            "DatabaseService.asUser(userId, cb) opens a transaction, runs set_config('app.current_user_id', <userId>, true) (SET LOCAL semantics), then runs cb with the scoped transaction handle",
+            "DatabaseService.asSystem(cb) runs cb in a transaction WITHOUT setting app.current_user_id, for background/gateway jobs that legitimately operate outside one tenant context",
+            "an AsyncLocalStorage store holds the current userId; the JWT guard populates it from payload.sub for every authenticated request, and service paths run inside asUser automatically",
+            "fire-and-forget pipeline/gateway work (chunkAndEmbed, rechunk, event publication) runs under asSystem, never leaking a stale tenant context across the async boundary",
+            "fast-check property tests (strict=true): for arbitrary userId, asUser sets app.current_user_id to that uuid and unsets on exit; asSystem never sets it; single-example Jest only as // bypass: fallback"
+          ],
+          "test_file": "apps/api/test/database/tenant-context.spec.ts",
+          "scenario_name": "Property: asUser scopes app.current_user_id to the request user and asSystem omits it"
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Define and verify RLS policies for owner isolation and public read",
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Enable drizzle role management; add project_meta RLS policies",
+          "criteria": [
+            "drizzle.config.ts sets entities: { roles: true } (alongside existing schema/out/dialect/dbCredentials) so drizzle-kit manages the app_user role and policies in generated migrations",
+            "project_meta calls .enableRLS() and declares, via the third-arg callback array, pgPolicy('project_meta_owner_isolation', { for: 'all', to: appUser, using/withCheck: ownerId = current_setting('app.current_user_id', true)::uuid })",
+            "project_meta also declares pgPolicy('project_meta_public_read', { for: 'select', to: appUser, using: isPublic = true }) so public projects are readable regardless of tenant context",
+            "no pgTable.withRLS() anywhere (v1.0-beta only, won't compile on 0.45.2); policies come from the third-arg array; the ::uuid cast is present since current_setting returns text",
+            "a generated migration enables RLS and creates both project_meta policies; EXEMPT FROM PARADIGM: golden policy DDL is static, behavioral proof is the cross-tenant property at 03-03"
+          ],
+          "test_file": "apps/api/test/schema/rls-policies-project-meta.spec.ts",
+          "scenario_name": "project_meta enables RLS with owner_isolation (for all) and public_read (for select) policies via the 0.45.2 third-arg API"
+        },
+        {
+          "id": "03-02",
+          "name": "Add owner_id-keyed RLS policies to the four subtype tables",
+          "criteria": [
+            "thoughts, labels, relationships, chunks each call .enableRLS() and declare pgPolicy('<table>_owner_isolation', { for: 'all', to: appUser, using/withCheck: ownerId = current_setting('app.current_user_id', true)::uuid }) via the third-arg array",
+            "each policy keys on the table's own local owner_id column added in phase 01 (no join to project_meta), with the mandatory ::uuid cast on current_setting",
+            "policies are added via the third-arg array alongside the existing index declarations; no pgTable.withRLS() and no FORCE (app_user owns no tables)",
+            "a generated migration under apps/api/drizzle/migrations enables RLS and creates all four <table>_owner_isolation policies",
+            "EXEMPT FROM PARADIGM: golden policy DDL is static schema metadata; the compensating behavioral proof is the cross-tenant enforcement property at 03-03"
+          ],
+          "test_file": "apps/api/test/schema/rls-policies-subtypes.spec.ts",
+          "scenario_name": "thoughts, labels, relationships, and chunks enable RLS with owner_isolation policies keyed on local owner_id"
+        },
+        {
+          "id": "03-03",
+          "name": "Cross-tenant integration test: zero rows for the second user",
+          "criteria": [
+            "integration test seeds two users each owning a project with thoughts, labels, relationships, and chunks, then connects as app_user and runs reads inside asUser(userA)",
+            "under asUser(userA), SELECT over project_meta, thoughts, labels, relationships, chunks returns only userA's rows and ZERO of userB's rows (using clause enforced)",
+            "under asUser(userA), an INSERT/UPDATE writing a userB-owned row is rejected (withCheck), and a public project owned by userB IS readable via public_read",
+            "assertOwnership is retained unchanged in all services during this phase as defense-in-depth, so the test proves RLS isolation independently before any removal in phase 04",
+            "this step is integration (verifies policy enforcement against a real Postgres, not an in-memory invariant), single-example by design per the test paradigm; it is NOT property-based"
+          ],
+          "test_file": "apps/api/test/integration/rls-cross-tenant.spec.ts",
+          "scenario_name": "a second user's tenant context returns zero rows and is denied writes for every RLS-protected table"
+        }
+      ]
+    },
+    {
+      "id": "04",
+      "name": "Slim redundant app-layer ownership checks, retain project-type FK invariant",
+      "steps": [
+        {
+          "id": "04-01",
+          "name": "Remove RLS-redundant ownership checks; retain project-type FK invariant",
+          "criteria": [
+            "remove the ownership role of assertOwnership (caller owns the project) from RLS-covered read/write paths in thoughts, labels, relationships, pipeline services, yielding net code reduction",
+            "retain the project-TYPE FK invariant assertOwnership enforced (project_id must reference a project-type entity) wherever a DTO projectId is accepted on create, so a non-project id is still rejected",
+            "thought.schema.ts and label.schema.ts header comments note the project-type FK check is the sole remaining app-layer ownership-adjacent check, with owner isolation now enforced by RLS",
+            "behavior unchanged: NotFoundException still thrown for missing ids, remove() still cascades, cross-project relationship rejection and endpoint-type validation untouched; the 03-03 cross-tenant test still passes",
+            "fast-check property tests (strict=true): for arbitrary DTOs, create() rejects a non-project-type projectId and accepts a valid one; removing the check preserves NotFound/cascade behavior; single-example Jest only as // bypass: fallback"
+          ],
+          "test_file": "apps/api/test/workspace/ownership-check-removal.spec.ts",
+          "scenario_name": "Property: services drop RLS-redundant ownership checks yet still reject non-project-type projectId on create"
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "apps/api/src/database/",
+      "apps/api/src/database/schema/",
+      "apps/api/src/auth/",
+      "apps/api/src/projects/",
+      "apps/api/src/workspace/thoughts/",
+      "apps/api/src/workspace/labels/",
+      "apps/api/src/workspace/relationships/",
+      "apps/api/src/workspace/pipeline/",
+      "apps/api/drizzle/migrations/"
+    ],
+    "test_directories": [
+      "apps/api/test/schema/",
+      "apps/api/test/database/",
+      "apps/api/test/workspace/",
+      "apps/api/test/integration/"
+    ],
+    "excluded_patterns": [
+      "__init__.py",
+      "__pycache__/**"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "orchestrator-review (automated quality gate + roadmap-only integrity + RLS correctness review)",
+    "approved_at": "2026-06-05T11:12:00Z",
+    "notes": "Quality gate PASS (step-id format, no private-method AC coupling, no identical-pattern batching, schema-valid). files_to_modify omitted per validated house schema (files named in criteria + implementation_scope; matches delivered denormalize-project-id roadmap). Upstream issue UI-1 (pipeline writes vs chunks RLS) resolved: run pipeline under asUser(resolvedOwnerId). See upstream-issues.md."
+  }
+}

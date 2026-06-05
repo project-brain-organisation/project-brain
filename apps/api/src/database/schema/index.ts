@@ -12,3 +12,4 @@ export * from './label.schema';
 export * from './relationship.schema';
 export * from './chunk.schema';
 export * from './mcp-tokens.schema';
+export * from './app-user-role.schema';
