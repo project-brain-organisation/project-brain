@@ -12,6 +12,10 @@
  *   - A thought has at most one parent   → UNIQUE (source_id) WHERE kind='hierarchy'
  *   - A thought can't carry a label twice → UNIQUE (source_id, target_id) WHERE kind='tag'
  *   - No duplicate canvas edges          → UNIQUE (source_id, target_id, label_id) WHERE kind='edge'
+ *
+ * owner_id is a denormalized immutable copy of the project's owner (mirrors
+ * projectMeta.ownerId), carried locally on the row so RLS can enforce ownership
+ * without joining project_meta.
  */
 
 import {
@@ -24,6 +28,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { entities } from './entities.schema';
+import { users } from './users.schema';
 
 export const relationshipKind = pgEnum('relationship_kind', [
   'hierarchy',
@@ -38,6 +43,9 @@ export const relationships = pgTable(
     projectId: uuid('project_id')
       .notNull()
       .references(() => entities.id, { onDelete: 'cascade' }),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     sourceId: uuid('source_id')
       .notNull()
       .references(() => entities.id, { onDelete: 'cascade' }),
@@ -52,8 +60,9 @@ export const relationships = pgTable(
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (t) => [
-    // Four regular indexes
+    // Five regular indexes
     index('idx_relationships_project_id').on(t.projectId),
+    index('idx_relationships_owner_id').on(t.ownerId),
     index('idx_relationships_source_kind').on(t.sourceId, t.kind),
     index('idx_relationships_target_kind').on(t.targetId, t.kind),
     index('idx_relationships_label_id').on(t.labelId),

@@ -10,6 +10,10 @@
  * carried directly on the row for efficient project-scoped queries without joins.
  * It mirrors the pattern used by chunk.schema.ts and relationship.schema.ts.
  *
+ * owner_id is a denormalized immutable copy of the project's owner (mirrors
+ * projectMeta.ownerId), carried locally on the row so RLS can enforce ownership
+ * without joining project_meta.
+ *
  * FK SEMANTIC RESTRICTION: project_id references entities.id at the database level,
  * which technically allows any entity type as a value. Semantically, project_id MUST
  * refer to a project-type entity only. This is enforced at the application layer via
@@ -26,6 +30,7 @@
 import { pgTable, uuid, varchar, boolean, index } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { entities } from './entities.schema';
+import { users } from './users.schema';
 
 export const labels = pgTable(
   'labels',
@@ -36,12 +41,16 @@ export const labels = pgTable(
     projectId: uuid('project_id')
       .notNull()
       .references(() => entities.id, { onDelete: 'cascade' }),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 100 }).notNull(),
     color: varchar('color', { length: 7 }).notNull().default('#999999'),
     isEdge: boolean('is_edge').notNull().default(false),
   },
   (t) => [
     index('idx_labels_project_id').on(t.projectId),
+    index('idx_labels_owner_id').on(t.ownerId),
   ],
 );
 

@@ -5,6 +5,10 @@
  *   - project_id replaces user_id (chunks are project-scoped, not user-scoped)
  *   - project_id FK → entities.id (cascade)
  *   - vector(768) customType preserved verbatim from legacy schema.ts
+ *
+ * owner_id is a denormalized immutable copy of the project's owner (mirrors
+ * projectMeta.ownerId), carried locally on the row so RLS can enforce ownership
+ * without joining project_meta.
  */
 import {
   pgTable,
@@ -18,6 +22,7 @@ import {
 import { relations } from 'drizzle-orm';
 import { entities } from './entities.schema';
 import { thoughts } from './thought.schema';
+import { users } from './users.schema';
 
 // ── Custom pgvector type ─────────────────────────────────────────
 const vector = customType<{ data: number[] }>({
@@ -44,6 +49,9 @@ export const chunks = pgTable(
     projectId: uuid('project_id')
       .notNull()
       .references(() => entities.id, { onDelete: 'cascade' }),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
     body: text('body').notNull(),
     chunkIndex: integer('chunk_index').notNull(),
     vectorEmbedding: vector('vector_embedding'),
@@ -52,6 +60,7 @@ export const chunks = pgTable(
   (t) => [
     index('idx_chunks_thought_id').on(t.thoughtId),
     index('idx_chunks_project_id').on(t.projectId),
+    index('idx_chunks_owner_id').on(t.ownerId),
   ],
 );
 
