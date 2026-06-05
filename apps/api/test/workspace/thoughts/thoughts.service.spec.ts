@@ -1,12 +1,18 @@
 /**
  * WorkspaceThoughtsService unit tests — port-to-port (ThoughtsService driving port)
  *
- * Test Budget: 4 distinct behaviors × 2 = 8 max unit tests
+ * Property: thoughts service stamps and filters project_id without joining entities for scope
+ *
+ * Test Budget: 6 distinct behaviors × 2 = 12 max unit tests
  * Behaviors:
  *   B1: create() calls assertOwnership before any DB operation
- *   B2: create() runs db.transaction inserting paired entities + thoughts rows
- *   B3: setColor() updates thoughts.color inline (no colors table reference)
- *   B4: remove() deletes from entities (cascades to thoughts)
+ *   B2: create() runs db.transaction inserting paired entities + thoughts rows,
+ *       with thoughts row carrying projectId = dto.projectId
+ *   B3: findByProject() filters on thoughts.projectId — no innerJoin on entities
+ *   B4: by-id methods (setColor, clearColor, remove, updateBody) resolve scope
+ *       from the thought row directly (no entities query first)
+ *   B5: assertOwnership receives the thought's project_id on by-id mutations
+ *   B6: NotFoundException thrown when thought row is missing (not entity row)
  *
  * DatabaseService and ProjectsService are mocked at the driven port boundary.
  * No mocks inside the hexagonal domain — only at port boundaries.
@@ -59,15 +65,16 @@ function makeDeleteChain() {
 }
 
 /**
- * Build transaction mock that tracks insert calls to entities and thoughts tables.
+ * Build transaction mock that tracks insert calls to entities and thoughts tables
+ * and captures the values passed to each insert.
  */
 function makeTxMock(entityRow: unknown, thoughtRow: unknown) {
-  const txInsertCalls: Array<{ tableName: string }> = [];
+  const txInsertCalls: Array<{ tableName: string; values: Record<string, unknown> }> = [];
 
   const makeTxInsertChain = (tableName: string, rows: unknown[]) => {
     const chain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
-    chain.values = jest.fn(() => {
-      txInsertCalls.push({ tableName });
+    chain.values = jest.fn((vals: Record<string, unknown>) => {
+      txInsertCalls.push({ tableName, values: vals });
       return chain;
     });
     chain.returning = jest.fn().mockResolvedValue(rows);
@@ -76,8 +83,6 @@ function makeTxMock(entityRow: unknown, thoughtRow: unknown) {
 
   const tx = {
     insert: jest.fn((table: Record<string, unknown>) => {
-      // Distinguish entities from thoughts by Drizzle table name symbol.
-      // (Cannot use 'projectId' in table — thoughts now carries projectId too, step 01-01.)
       const tableName = (table as any)[Symbol.for('drizzle:Name')] ?? 'unknown';
       const rows = tableName === 'entities' ? [entityRow] : [thoughtRow];
       return makeTxInsertChain(tableName, rows);
@@ -123,7 +128,7 @@ describe('WorkspaceThoughtsService', () => {
       } as unknown as ProjectsService;
 
       const entityRow = { id: 'entity-uuid', projectId: 'proj-1', type: 'thought' };
-      const thoughtRow = { id: 'entity-uuid', body: 'hello', title: '', color: null };
+      const thoughtRow = { id: 'entity-uuid', projectId: 'proj-1', body: 'hello', title: '', color: null };
       const { tx, txInsertCalls } = makeTxMock(entityRow, thoughtRow);
 
       const drizzle = {
@@ -147,7 +152,7 @@ describe('WorkspaceThoughtsService', () => {
 
     it('runs db.transaction inserting into both entities and thoughts tables', async () => {
       const entityRow = { id: 'entity-uuid', projectId: 'proj-1', type: 'thought' };
-      const thoughtRow = { id: 'entity-uuid', body: 'hello', title: '', color: null };
+      const thoughtRow = { id: 'entity-uuid', projectId: 'proj-1', body: 'hello', title: '', color: null };
       const { tx, txInsertCalls } = makeTxMock(entityRow, thoughtRow);
 
       const drizzle = {
@@ -169,6 +174,32 @@ describe('WorkspaceThoughtsService', () => {
       expect(tableNames).toContain('entities');
       expect(tableNames).toContain('thoughts');
       expect(result).toMatchObject({ id: 'entity-uuid', body: 'hello' });
+    });
+
+    // bypass: fallback — Jest example-based test; fast-check not installed in this workspace
+    it('stamps projectId onto the thoughts insert (AC1)', async () => {
+      const entityRow = { id: 'entity-uuid', projectId: 'proj-1', type: 'thought' };
+      const thoughtRow = { id: 'entity-uuid', projectId: 'proj-1', body: 'hello', title: '', color: null };
+      const { tx, txInsertCalls } = makeTxMock(entityRow, thoughtRow);
+
+      const drizzle = {
+        select: jest.fn().mockReturnValue(makeSelectChain([])),
+        update: jest.fn().mockReturnValue(makeUpdateChain([])),
+        delete: jest.fn().mockReturnValue(makeDeleteChain()),
+        transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
+          cb(tx),
+        ),
+      };
+      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const projectsService = makeProjectsService();
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
+
+      await service.create('user-1', { projectId: 'proj-1', body: 'hello' });
+
+      const thoughtsInsert = txInsertCalls.find((c) => c.tableName === 'thoughts');
+      expect(thoughtsInsert).toBeDefined();
+      // AC1: thoughts insert must carry the denormalized project_id
+      expect(thoughtsInsert!.values).toMatchObject({ projectId: 'proj-1' });
     });
 
     it('propagates transaction failure — rolls back both inserts', async () => {
@@ -210,14 +241,51 @@ describe('WorkspaceThoughtsService', () => {
     });
   });
 
-  // ── B3: setColor() ──────────────────────────────────────────────
+  // ── B3: findByProject() ─────────────────────────────────────────
+
+  describe('findByProject', () => {
+    // bypass: fallback — Jest example-based test; fast-check not installed in this workspace
+    it('filters thoughts.projectId directly — does NOT innerJoin entities (AC2)', async () => {
+      // findByProject terminates at .where() (no .limit()), so the chain must
+      // resolve at that point. Build a chain where .where() is the terminal resolver.
+      const rows = [
+        { id: 'thought-1', projectId: 'proj-1', body: 'hello', title: '', color: null },
+        { id: 'thought-2', projectId: 'proj-1', body: 'world', title: '', color: null },
+      ];
+      const selectChain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
+      selectChain.from = jest.fn().mockReturnValue(selectChain);
+      selectChain.innerJoin = jest.fn().mockReturnValue(selectChain);
+      selectChain.where = jest.fn().mockResolvedValue(rows);
+      selectChain.limit = jest.fn().mockResolvedValue(rows);
+      const selectSpy = jest.fn().mockReturnValue(selectChain);
+
+      const drizzle = {
+        select: selectSpy,
+        update: jest.fn().mockReturnValue(makeUpdateChain([])),
+        delete: jest.fn().mockReturnValue(makeDeleteChain()),
+        transaction: jest.fn(),
+      };
+      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const projectsService = makeProjectsService();
+      const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
+
+      const results = await service.findByProject('user-1', 'proj-1');
+
+      // AC2: no innerJoin on entities for scope
+      expect(selectChain.innerJoin).not.toHaveBeenCalled();
+      // AC2: returns the rows from thoughts
+      expect(results).toHaveLength(2);
+    });
+  });
+
+  // ── B4 + B5: by-id methods read scope from thought row ──────────
 
   describe('setColor', () => {
-    it('updates thoughts.color inline without referencing any colors table', async () => {
-      const entityRow = { id: 'thought-1', projectId: 'proj-1', type: 'thought' };
-      const thoughtRow = { id: 'thought-1', body: 'content', title: '', color: null };
+    // bypass: fallback — Jest example-based test; fast-check not installed in this workspace
+    it('resolves scope from thought row — no entities query first (AC3)', async () => {
+      // After refactor: single select from thoughts (not entities then thoughts)
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: null };
 
-      // findOne: select entities then thoughts
       let selectCallCount = 0;
       const selectChain = {
         from: jest.fn().mockReturnThis(),
@@ -225,7 +293,7 @@ describe('WorkspaceThoughtsService', () => {
         where: jest.fn().mockReturnThis(),
         limit: jest.fn().mockImplementation(() => {
           selectCallCount++;
-          if (selectCallCount === 1) return Promise.resolve([entityRow]);
+          // After refactor: first select is from thoughts, returns thoughtRow
           return Promise.resolve([thoughtRow]);
         }),
       };
@@ -246,26 +314,21 @@ describe('WorkspaceThoughtsService', () => {
 
       const result = await service.setColor('user-1', 'thought-1', '#ff0000');
 
-      // update was called once (on thoughts table, not a colors table)
-      expect(updateSpy).toHaveBeenCalledTimes(1);
-      // The table passed to update must NOT be a colors table — verified by result shape
+      // AC3: only one select call (from thoughts, not entities-then-thoughts N+1)
+      expect(selectCallCount).toBe(1);
+      // AC4: assertOwnership called with the thought row's project_id
+      expect(projectsService.assertOwnership).toHaveBeenCalledWith('user-1', 'proj-1');
       expect(result).toMatchObject({ color: '#ff0000' });
     });
 
     it('clears thoughts.color to null when clearColor is called', async () => {
-      const entityRow = { id: 'thought-1', projectId: 'proj-1', type: 'thought' };
-      const thoughtRow = { id: 'thought-1', body: 'content', title: '', color: '#ff0000' };
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: '#ff0000' };
 
-      let selectCallCount = 0;
       const selectChain = {
         from: jest.fn().mockReturnThis(),
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockImplementation(() => {
-          selectCallCount++;
-          if (selectCallCount === 1) return Promise.resolve([entityRow]);
-          return Promise.resolve([thoughtRow]);
-        }),
+        limit: jest.fn().mockResolvedValue([thoughtRow]),
       };
 
       const updatedRow = { ...thoughtRow, color: null };
@@ -286,23 +349,18 @@ describe('WorkspaceThoughtsService', () => {
     });
   });
 
-  // ── B4: remove() ────────────────────────────────────────────────
+  // ── B6: NotFoundException from thought lookup ────────────────────
 
   describe('remove', () => {
     it('deletes from the entities table (not thoughts directly), relying on cascade', async () => {
-      const entityRow = { id: 'thought-1', projectId: 'proj-1', type: 'thought' };
-      const thoughtRow = { id: 'thought-1', body: 'content', title: '', color: null };
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: null };
 
-      let selectCallCount = 0;
       const selectChain = {
         from: jest.fn().mockReturnThis(),
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockImplementation(() => {
-          selectCallCount++;
-          if (selectCallCount === 1) return Promise.resolve([entityRow]);
-          return Promise.resolve([thoughtRow]);
-        }),
+        // After refactor: single select from thoughts
+        limit: jest.fn().mockResolvedValue([thoughtRow]),
       };
 
       const deleteChain = makeDeleteChain();
@@ -328,8 +386,9 @@ describe('WorkspaceThoughtsService', () => {
       expect(result).toEqual({ deleted: true });
     });
 
-    it('throws NotFoundException when thought does not exist', async () => {
-      // findOne returns empty for entity lookup
+    // bypass: fallback — Jest example-based test; fast-check not installed in this workspace
+    it('throws NotFoundException when thought row does not exist (AC4 — scope from thought)', async () => {
+      // After refactor: select from thoughts returns empty (not entities)
       const selectChain = {
         from: jest.fn().mockReturnThis(),
         innerJoin: jest.fn().mockReturnThis(),

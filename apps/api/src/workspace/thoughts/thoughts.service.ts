@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { ProjectsService } from '../../projects/projects.service';
 import { PipelineService } from '../pipeline/pipeline.service';
@@ -33,6 +33,7 @@ export class ThoughtsService {
         .insert(thoughts)
         .values({
           id: entity.id,
+          projectId: dto.projectId,
           body: dto.body,
           title: dto.title ?? '',
           color: dto.color ?? null,
@@ -64,17 +65,17 @@ export class ThoughtsService {
   }
 
   async updateBody(userId: string, id: string, body: string, source: 'user' | 'mcp' = 'user') {
-    const [entity] = await this.db.db
+    const [thought] = await this.db.db
       .select()
-      .from(entities)
-      .where(eq(entities.id, id))
+      .from(thoughts)
+      .where(eq(thoughts.id, id))
       .limit(1);
 
-    if (!entity) {
+    if (!thought) {
       throw new NotFoundException(`Thought ${id} not found`);
     }
 
-    await this.projectsService.assertOwnership(userId, entity.projectId);
+    await this.projectsService.assertOwnership(userId, thought.projectId);
 
     const [updated] = await this.db.db
       .update(thoughts)
@@ -84,7 +85,7 @@ export class ThoughtsService {
 
     // Re-chunk + re-embed on body edit (async/background, project-scoped).
     this.pipelineService
-      .rechunk(entity.projectId, id, body)
+      .rechunk(thought.projectId, id, body)
       .catch((err) =>
         this.logger.warn(`Re-chunk/embed failed for thought ${id}: ${err.message}`),
       );
@@ -94,7 +95,7 @@ export class ThoughtsService {
       type: 'thought.updated',
       source,
       resourceId: id,
-      projectId: entity.projectId,
+      projectId: thought.projectId,
       timestamp: new Date().toISOString(),
     });
 
@@ -109,43 +110,36 @@ export class ThoughtsService {
     await this.projectsService.assertOwnership(userId, projectId);
 
     return this.db.db
-      .select({ thought: thoughts, entity: entities })
+      .select()
       .from(thoughts)
-      .innerJoin(entities, eq(thoughts.id, entities.id))
-      .where(and(eq(entities.projectId, projectId), eq(entities.type, 'thought')));
+      .where(eq(thoughts.projectId, projectId));
   }
 
   async findOne(userId: string, id: string) {
-    const [entity] = await this.db.db
-      .select()
-      .from(entities)
-      .where(eq(entities.id, id))
-      .limit(1);
-
-    if (!entity) {
-      throw new NotFoundException(`Thought ${id} not found`);
-    }
-
-    await this.projectsService.assertOwnership(userId, entity.projectId);
-
     const [thought] = await this.db.db
       .select()
       .from(thoughts)
       .where(eq(thoughts.id, id))
       .limit(1);
 
+    if (!thought) {
+      throw new NotFoundException(`Thought ${id} not found`);
+    }
+
+    await this.projectsService.assertOwnership(userId, thought.projectId);
+
     return thought;
   }
 
   async setColor(userId: string, id: string, color: string, source: 'user' | 'mcp' = 'user') {
-    const [entity] = await this.db.db
+    const [thought] = await this.db.db
       .select()
-      .from(entities)
-      .where(eq(entities.id, id))
+      .from(thoughts)
+      .where(eq(thoughts.id, id))
       .limit(1);
 
-    if (!entity) throw new NotFoundException(`Thought ${id} not found`);
-    await this.projectsService.assertOwnership(userId, entity.projectId);
+    if (!thought) throw new NotFoundException(`Thought ${id} not found`);
+    await this.projectsService.assertOwnership(userId, thought.projectId);
 
     const [updated] = await this.db.db
       .update(thoughts)
@@ -158,7 +152,7 @@ export class ThoughtsService {
       type: 'thought.updated',
       source,
       resourceId: id,
-      projectId: entity.projectId,
+      projectId: thought.projectId,
       timestamp: new Date().toISOString(),
     });
 
@@ -166,14 +160,14 @@ export class ThoughtsService {
   }
 
   async clearColor(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
-    const [entity] = await this.db.db
+    const [thought] = await this.db.db
       .select()
-      .from(entities)
-      .where(eq(entities.id, id))
+      .from(thoughts)
+      .where(eq(thoughts.id, id))
       .limit(1);
 
-    if (!entity) throw new NotFoundException(`Thought ${id} not found`);
-    await this.projectsService.assertOwnership(userId, entity.projectId);
+    if (!thought) throw new NotFoundException(`Thought ${id} not found`);
+    await this.projectsService.assertOwnership(userId, thought.projectId);
 
     const [updated] = await this.db.db
       .update(thoughts)
@@ -186,7 +180,7 @@ export class ThoughtsService {
       type: 'thought.updated',
       source,
       resourceId: id,
-      projectId: entity.projectId,
+      projectId: thought.projectId,
       timestamp: new Date().toISOString(),
     });
 
@@ -194,17 +188,17 @@ export class ThoughtsService {
   }
 
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
-    const [entity] = await this.db.db
+    const [thought] = await this.db.db
       .select()
-      .from(entities)
-      .where(eq(entities.id, id))
+      .from(thoughts)
+      .where(eq(thoughts.id, id))
       .limit(1);
 
-    if (!entity) {
+    if (!thought) {
       throw new NotFoundException(`Thought ${id} not found`);
     }
 
-    await this.projectsService.assertOwnership(userId, entity.projectId);
+    await this.projectsService.assertOwnership(userId, thought.projectId);
 
     await this.db.db.delete(entities).where(eq(entities.id, id));
 
@@ -213,7 +207,7 @@ export class ThoughtsService {
       type: 'thought.deleted',
       source,
       resourceId: id,
-      projectId: entity.projectId,
+      projectId: thought.projectId,
       timestamp: new Date().toISOString(),
     });
 
