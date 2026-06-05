@@ -18,6 +18,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { RelationshipsService } from '../../../src/workspace/relationships/relationships.service';
 import type { DatabaseService } from '../../../src/database/database.service';
 import type { ProjectsService } from '../../../src/projects/projects.service';
+import type { WorkspaceEventsService } from '../../../src/workspace/gateway/workspace-events.service';
 
 // ── Fluent Drizzle mock helpers ────────────────────────────────────
 
@@ -77,6 +78,10 @@ function makeProjectsService(assertImpl?: () => Promise<void>): ProjectsService 
   } as unknown as ProjectsService;
 }
 
+function makeWorkspaceEventsService(): WorkspaceEventsService {
+  return { publish: jest.fn() } as unknown as WorkspaceEventsService;
+}
+
 // ── Entity row factories ───────────────────────────────────────────
 
 const thoughtInProj1 = { id: 'src-uuid', projectId: 'proj-1', type: 'thought' };
@@ -96,7 +101,7 @@ describe('RelationshipsService', () => {
         selectResponses: [[thoughtInProj1], [thoughtInProj2]],
       });
       const projectsService = makeProjectsService();
-      const service = new RelationshipsService(db, projectsService);
+      const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
 
       await expect(
         service.create('user-1', {
@@ -128,7 +133,7 @@ describe('RelationshipsService', () => {
     ])('$desc', async ({ source, target, kind }) => {
       const db = makeDbService({ selectResponses: [[source], [target]] });
       const projectsService = makeProjectsService();
-      const service = new RelationshipsService(db, projectsService);
+      const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
 
       await expect(
         service.create('user-1', {
@@ -151,7 +156,7 @@ describe('RelationshipsService', () => {
         insertError: pgUniqueErr,
       });
       const projectsService = makeProjectsService();
-      const service = new RelationshipsService(db, projectsService);
+      const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
 
       await expect(
         service.create('user-1', {
@@ -170,7 +175,7 @@ describe('RelationshipsService', () => {
         insertError: unexpectedErr,
       });
       const projectsService = makeProjectsService();
-      const service = new RelationshipsService(db, projectsService);
+      const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
 
       await expect(
         service.create('user-1', {
@@ -200,7 +205,7 @@ describe('RelationshipsService', () => {
         insertRows: [newRel],
       });
       const projectsService = makeProjectsService();
-      const service = new RelationshipsService(db, projectsService);
+      const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
 
       const result = await service.create('user-1', {
         projectId: 'proj-1',
@@ -215,7 +220,7 @@ describe('RelationshipsService', () => {
     it('throws NotFoundException when source entity does not exist', async () => {
       const db = makeDbService({ selectResponses: [[]] }); // empty → not found
       const projectsService = makeProjectsService();
-      const service = new RelationshipsService(db, projectsService);
+      const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
 
       await expect(
         service.create('user-1', {
@@ -252,7 +257,7 @@ describe('RelationshipsService', () => {
         execute: jest.fn().mockResolvedValue({ rows: [] }),
       };
       const db = { db: drizzle } as unknown as DatabaseService;
-      const service = new RelationshipsService(db, projectsService);
+      const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
 
       await service.create('user-1', {
         projectId: 'proj-1',

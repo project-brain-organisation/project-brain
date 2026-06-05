@@ -7,6 +7,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { ProjectsService } from '../../projects/projects.service';
+import { WorkspaceEventsService } from '../gateway/workspace-events.service';
 import { entities, relationships } from '../../database/schema/index';
 import { CreateRelationshipDto } from './dto/create-relationship.dto';
 
@@ -15,45 +16,46 @@ export class RelationshipsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly projectsService: ProjectsService,
+    private readonly workspaceEvents: WorkspaceEventsService,
   ) {}
 
-  async create(userId: string, dto: CreateRelationshipDto) {
+  async create(userId: string, dto: CreateRelationshipDto, source: 'user' | 'mcp' = 'user') {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
     // Load source entity
-    const [source] = await this.db.db
+    const [source_entity] = await this.db.db
       .select()
       .from(entities)
       .where(eq(entities.id, dto.sourceId))
       .limit(1);
 
-    if (!source) {
+    if (!source_entity) {
       throw new NotFoundException(`Entity ${dto.sourceId} not found`);
     }
 
     // Load target entity
-    const [target] = await this.db.db
+    const [target_entity] = await this.db.db
       .select()
       .from(entities)
       .where(eq(entities.id, dto.targetId))
       .limit(1);
 
-    if (!target) {
+    if (!target_entity) {
       throw new NotFoundException(`Entity ${dto.targetId} not found`);
     }
 
     // Cross-project invariant
-    if (source.projectId !== dto.projectId || target.projectId !== dto.projectId) {
+    if (source_entity.projectId !== dto.projectId || target_entity.projectId !== dto.projectId) {
       throw new BadRequestException('Cross-project relationships are not allowed');
     }
 
     // Per-kind endpoint-type validation
     if (dto.kind === 'hierarchy') {
-      if (source.type !== 'thought' || target.type !== 'thought') {
+      if (source_entity.type !== 'thought' || target_entity.type !== 'thought') {
         throw new BadRequestException('hierarchy relationships require thought/thought endpoints');
       }
     } else if (dto.kind === 'tag') {
-      if (source.type !== 'thought' || target.type !== 'label') {
+      if (source_entity.type !== 'thought' || target_entity.type !== 'label') {
         throw new BadRequestException('tag relationships require thought→label');
       }
     }
@@ -71,7 +73,15 @@ export class RelationshipsService {
         })
         .returning();
 
-      // TODO(04-02): emit WorkspaceEvent { type: 'relationship.created', source: 'user', id: relationship.id }
+      this.workspaceEvents.publish(userId, {
+        eventId: crypto.randomUUID(),
+        type: 'relationship.created',
+        source,
+        resourceId: relationship.id,
+        projectId: dto.projectId,
+        timestamp: new Date().toISOString(),
+      });
+
       return relationship;
     } catch (err) {
       if ((err as Record<string, unknown>)?.code === '23505') {
@@ -145,12 +155,20 @@ export class RelationshipsService {
     return result.rows;
   }
 
-  async remove(userId: string, id: string) {
-    await this.findOne(userId, id);
+  async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
+    const relationship = await this.findOne(userId, id);
 
     await this.db.db.delete(relationships).where(eq(relationships.id, id));
 
-    // TODO(04-02): emit WorkspaceEvent { type: 'relationship.deleted', source: 'user', id }
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'relationship.deleted',
+      source,
+      resourceId: id,
+      projectId: relationship.projectId,
+      timestamp: new Date().toISOString(),
+    });
+
     return { deleted: true };
   }
 }

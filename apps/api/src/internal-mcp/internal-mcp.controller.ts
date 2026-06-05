@@ -1,9 +1,9 @@
-// @ts-nocheck — legacy controller referencing removed schema columns; redesign in later backend-redesign-v2 steps
 import {
   BadRequestException,
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   Post,
   Req,
@@ -11,15 +11,14 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { ColorsService } from '../colors/colors.service';
 import { DatabaseService } from '../database/database.service';
-import { chunks, thoughts } from '../database/schema';
-import { LabelsService } from '../labels/labels.service';
-import { McpEventsService, type McpToolEvent } from '../mcp-events/mcp-events.service';
-import { ThoughtsService } from '../thoughts/thoughts.service';
+import { ProjectsService } from '../projects/projects.service';
+import { ThoughtsService } from '../workspace/thoughts/thoughts.service';
+import { LabelsService } from '../workspace/labels/labels.service';
+import { RelationshipsService } from '../workspace/relationships/relationships.service';
 import { McpInternalGuard } from './mcp-internal.guard';
+import { chunks, labels, relationships } from '../database/schema/index';
 
 @Controller('internal/mcp')
 @UseGuards(McpInternalGuard)
@@ -27,9 +26,9 @@ export class InternalMcpController {
   constructor(
     private readonly thoughtsService: ThoughtsService,
     private readonly labelsService: LabelsService,
-    private readonly colorsService: ColorsService,
+    private readonly relationshipsService: RelationshipsService,
     private readonly db: DatabaseService,
-    private readonly mcpEvents: McpEventsService,
+    private readonly projectsService: ProjectsService,
   ) {}
 
   private userIdFromHeaders(req: Request): string {
@@ -37,46 +36,22 @@ export class InternalMcpController {
     if (!userIdHeader) {
       throw new UnauthorizedException('Missing x-mcp-user-id header');
     }
-
     return userIdHeader;
-  }
-
-  private emit(
-    userId: string,
-    toolName: string,
-    category: McpToolEvent['category'],
-    operation: McpToolEvent['operation'],
-    resourceIds?: Record<string, string>,
-  ) {
-    this.mcpEvents.publishToolEvent(userId, {
-      eventId: randomUUID(),
-      toolName,
-      category,
-      operation,
-      timestamp: new Date().toISOString(),
-      resourceIds,
-    });
   }
 
   @Post('list-projects')
   listProjects(@Req() req: Request) {
     const userId = this.userIdFromHeaders(req);
-    return this.thoughtsService.findRoots(userId);
+    return this.projectsService.findAllByUser(userId);
   }
 
   @Post('create-project')
-  async createProject(
+  createProject(
     @Req() req: Request,
-    @Body() body: { title: string; body?: string },
+    @Body() body: { name: string; emoji?: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.thoughtsService.create(userId, {
-      title: body.title,
-      body: body.body,
-      isRoot: true,
-    });
-    this.emit(userId, 'create-project', 'thoughts', 'create', { thoughtId: result.id });
-    return result;
+    return this.projectsService.create(userId, { name: body.name, emoji: body.emoji });
   }
 
   @Get('thought/:thoughtId')
@@ -86,101 +61,97 @@ export class InternalMcpController {
   }
 
   @Post('list-thoughts')
-  async listThoughts(
+  listThoughts(
     @Req() req: Request,
-    @Body() body: { parentId?: string; projectId?: string },
+    @Body() body: { projectId: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-
-    if (body.parentId && body.projectId) {
-      const thoughts = await this.thoughtsService.findAll(userId, body.parentId);
-      return thoughts.filter((thought) => thought.projectId === body.projectId);
-    }
-
-    if (body.projectId) {
-      return this.thoughtsService.findByRoot(userId, body.projectId);
-    }
-
-    return this.thoughtsService.findAll(userId, body.parentId);
+    return this.thoughtsService.findByProject(userId, body.projectId);
   }
 
   @Post('create-thought')
-  async createThought(
+  createThought(
     @Req() req: Request,
-    @Body() body: { body: string; title?: string; parentId?: string },
+    @Body() body: { body: string; title?: string; projectId: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.thoughtsService.create(userId, {
-      body: body.body,
-      title: body.title,
-      parentId: body.parentId,
-    });
-    this.emit(userId, 'create-thought', 'thoughts', 'create', { thoughtId: result.id });
-    return result;
+    return this.thoughtsService.create(
+      userId,
+      { body: body.body, title: body.title, projectId: body.projectId },
+      'mcp',
+    );
   }
 
   @Post('edit-thought')
-  async editThought(
+  editThought(
     @Req() req: Request,
-    @Body() body: { thoughtId: string; body?: string; title?: string; parentId?: string },
+    @Body() body: { thoughtId: string; body: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.thoughtsService.update(userId, body.thoughtId, {
-      body: body.body,
-      title: body.title,
-      parentId: body.parentId,
-    });
-    this.emit(userId, 'edit-thought', 'thoughts', 'update', { thoughtId: body.thoughtId });
-    return result;
+    return this.thoughtsService.updateBody(userId, body.thoughtId, body.body, 'mcp');
   }
 
   @Post('remove-thought')
-  async removeThought(@Req() req: Request, @Body() body: { thoughtId: string }) {
+  removeThought(@Req() req: Request, @Body() body: { thoughtId: string }) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.thoughtsService.remove(userId, body.thoughtId);
-    this.emit(userId, 'remove-thought', 'thoughts', 'delete', { thoughtId: body.thoughtId });
-    return result;
+    return this.thoughtsService.remove(userId, body.thoughtId, 'mcp');
   }
 
   @Post('remember')
   remember(
     @Req() req: Request,
-    @Body() body: { query: string; n?: number },
+    @Body() body: { query: string; projectId: string; n?: number },
   ) {
     const userId = this.userIdFromHeaders(req);
-    return this.thoughtsService.semanticSearch(userId, body.query, body.n ?? 5);
+    return this.thoughtsService.semanticSearch(userId, body.projectId, body.query, body.n ?? 5);
   }
 
   @Get('elaborate/:chunkId')
   async elaborate(@Req() req: Request, @Param('chunkId') chunkId: string) {
     const userId = this.userIdFromHeaders(req);
 
-    const rows = await this.db.db
+    const [chunk] = await this.db.db
       .select({
         chunkId: chunks.id,
         chunkBody: chunks.body,
         chunkIndex: chunks.chunkIndex,
         thoughtId: chunks.thoughtId,
+        projectId: chunks.projectId,
       })
       .from(chunks)
-      .innerJoin(thoughts, eq(chunks.thoughtId, thoughts.id))
-      .where(and(eq(chunks.id, chunkId), eq(thoughts.userId, userId)))
+      .where(eq(chunks.id, chunkId))
       .limit(1);
 
-    const chunk = rows[0];
     if (!chunk) {
       throw new BadRequestException('Chunk not found');
     }
 
+    await this.projectsService.assertOwnership(userId, chunk.projectId);
+
     const thought = await this.thoughtsService.findOne(userId, chunk.thoughtId);
-    const parent = thought.parentId
-      ? await this.thoughtsService.findOne(userId, thought.parentId)
+
+    // Parent via hierarchy: source=child → target=parent
+    const [parentRel] = await this.db.db
+      .select()
+      .from(relationships)
+      .where(and(eq(relationships.sourceId, chunk.thoughtId), eq(relationships.kind, 'hierarchy')))
+      .limit(1);
+
+    const parent = parentRel
+      ? await this.thoughtsService.findOne(userId, parentRel.targetId)
       : null;
 
-    let siblings: Awaited<ReturnType<ThoughtsService['findAll']>> = [];
-    if (thought.parentId) {
-      const candidates = await this.thoughtsService.findAll(userId, thought.parentId);
-      siblings = candidates.filter((candidate) => candidate.id !== thought.id);
+    let siblings: unknown[] = [];
+    if (parentRel) {
+      const siblingRels = await this.db.db
+        .select()
+        .from(relationships)
+        .where(and(eq(relationships.targetId, parentRel.targetId), eq(relationships.kind, 'hierarchy')));
+      siblings = await Promise.all(
+        siblingRels
+          .filter((r) => r.sourceId !== chunk.thoughtId)
+          .map((r) => this.thoughtsService.findOne(userId, r.sourceId)),
+      );
     }
 
     return {
@@ -201,14 +172,48 @@ export class InternalMcpController {
     const userId = this.userIdFromHeaders(req);
 
     const thought = await this.thoughtsService.findOne(userId, thoughtId);
-    const parent = thought.parentId
-      ? await this.thoughtsService.findOne(userId, thought.parentId)
-      : null;
-    const children = await this.thoughtsService.findAll(userId, thought.id);
-    const labels = await this.labelsService.findByThought(thought.id);
 
-    const promptParts: string[] = [];
-    promptParts.push('Thought Context');
+    // Parent via hierarchy
+    const [parentRel] = await this.db.db
+      .select()
+      .from(relationships)
+      .where(and(eq(relationships.sourceId, thoughtId), eq(relationships.kind, 'hierarchy')))
+      .limit(1);
+
+    const parent = parentRel
+      ? await this.thoughtsService.findOne(userId, parentRel.targetId)
+      : null;
+
+    // Children: thoughts whose hierarchy target = thoughtId
+    const childRels = await this.db.db
+      .select()
+      .from(relationships)
+      .where(and(eq(relationships.targetId, thoughtId), eq(relationships.kind, 'hierarchy')));
+
+    const children = await Promise.all(
+      childRels.map((r) => this.thoughtsService.findOne(userId, r.sourceId)),
+    );
+
+    // Labels via tag relationships: source=thought → target=label
+    const tagRels = await this.db.db
+      .select()
+      .from(relationships)
+      .where(and(eq(relationships.sourceId, thoughtId), eq(relationships.kind, 'tag')));
+
+    const labelRows = (
+      await Promise.all(
+        tagRels.map(async (r) => {
+          const [label] = await this.db.db
+            .select()
+            .from(labels)
+            .where(eq(labels.id, r.targetId))
+            .limit(1);
+          return label;
+        }),
+      )
+    ).filter(Boolean);
+
+    const promptParts: string[] = ['Thought Context'];
     promptParts.push(`Title: ${thought.title || '(untitled)'}`);
     promptParts.push(`Body: ${thought.body || '(empty)'}`);
 
@@ -225,9 +230,9 @@ export class InternalMcpController {
       }
     }
 
-    if (labels.length > 0) {
+    if (labelRows.length > 0) {
       promptParts.push('Labels');
-      for (const label of labels) {
+      for (const label of labelRows) {
         promptParts.push(`- ${label.name} (${label.color})${label.isEdge ? ' [edge]' : ''}`);
       }
     }
@@ -236,61 +241,61 @@ export class InternalMcpController {
       thought,
       parent,
       children,
-      labels,
+      labels: labelRows,
       prompt: promptParts.join('\n'),
     };
   }
 
   @Post('list-labels')
-  listLabels(@Req() req: Request, @Body() body: { projectId?: string }) {
+  listLabels(@Req() req: Request, @Body() body: { projectId: string }) {
     const userId = this.userIdFromHeaders(req);
-    return this.labelsService.findAll(userId, body.projectId);
+    return this.labelsService.findByProject(userId, body.projectId);
   }
 
   @Post('create-label')
-  async createLabel(
+  createLabel(
     @Req() req: Request,
-    @Body() body: { name: string; color?: string; projectId?: string },
+    @Body() body: { name: string; color?: string; projectId: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.labelsService.create(userId, body.name, body.color, body.projectId);
-    this.emit(userId, 'create-label', 'labels', 'create', { labelId: result.id });
-    return result;
+    return this.labelsService.create(
+      userId,
+      { name: body.name, color: body.color, projectId: body.projectId },
+      'mcp',
+    );
   }
 
   @Post('update-label')
-  async updateLabel(
+  updateLabel(
     @Req() req: Request,
     @Body() body: { labelId: string; name?: string; color?: string; isEdge?: boolean },
   ) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.labelsService.update(userId, body.labelId, {
-      name: body.name,
-      color: body.color,
-      isEdge: body.isEdge,
-    });
-    this.emit(userId, 'update-label', 'labels', 'update', { labelId: body.labelId });
-    return result;
+    return this.labelsService.update(
+      userId,
+      body.labelId,
+      { name: body.name, color: body.color, isEdge: body.isEdge },
+      'mcp',
+    );
   }
 
   @Post('remove-label')
-  async removeLabel(@Req() req: Request, @Body() body: { labelId: string }) {
+  removeLabel(@Req() req: Request, @Body() body: { labelId: string }) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.labelsService.remove(userId, body.labelId);
-    this.emit(userId, 'remove-label', 'labels', 'delete', { labelId: body.labelId });
-    return result;
+    return this.labelsService.remove(userId, body.labelId, 'mcp');
   }
 
   @Post('add-label-to-thought')
-  async addLabelToThought(
+  addLabelToThought(
     @Req() req: Request,
-    @Body() body: { thoughtId: string; labelId: string },
+    @Body() body: { thoughtId: string; labelId: string; projectId: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    await this.thoughtsService.findOne(userId, body.thoughtId);
-    const result = await this.labelsService.assignLabel(userId, body.thoughtId, body.labelId);
-    this.emit(userId, 'add-label-to-thought', 'labels', 'update', { thoughtId: body.thoughtId, labelId: body.labelId });
-    return result;
+    return this.relationshipsService.create(
+      userId,
+      { projectId: body.projectId, sourceId: body.thoughtId, targetId: body.labelId, kind: 'tag' },
+      'mcp',
+    );
   }
 
   @Post('remove-label-from-thought')
@@ -299,46 +304,73 @@ export class InternalMcpController {
     @Body() body: { thoughtId: string; labelId: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    await this.thoughtsService.findOne(userId, body.thoughtId);
-    const result = await this.labelsService.unassignLabel(body.thoughtId, body.labelId);
-    this.emit(userId, 'remove-label-from-thought', 'labels', 'update', { thoughtId: body.thoughtId, labelId: body.labelId });
-    return result;
+
+    const [rel] = await this.db.db
+      .select()
+      .from(relationships)
+      .where(
+        and(
+          eq(relationships.sourceId, body.thoughtId),
+          eq(relationships.targetId, body.labelId),
+          eq(relationships.kind, 'tag'),
+        ),
+      )
+      .limit(1);
+
+    if (!rel) {
+      throw new NotFoundException('Tag relationship not found');
+    }
+
+    return this.relationshipsService.remove(userId, rel.id, 'mcp');
   }
 
   @Get('thought-labels/:thoughtId')
   async getThoughtLabels(@Req() req: Request, @Param('thoughtId') thoughtId: string) {
     const userId = this.userIdFromHeaders(req);
+
+    // Ownership verified via findOne
     await this.thoughtsService.findOne(userId, thoughtId);
-    return this.labelsService.findByThought(thoughtId);
+
+    const tagRels = await this.db.db
+      .select()
+      .from(relationships)
+      .where(and(eq(relationships.sourceId, thoughtId), eq(relationships.kind, 'tag')));
+
+    return (
+      await Promise.all(
+        tagRels.map(async (r) => {
+          const [label] = await this.db.db
+            .select()
+            .from(labels)
+            .where(eq(labels.id, r.targetId))
+            .limit(1);
+          return label;
+        }),
+      )
+    ).filter(Boolean);
   }
 
   @Post('set-label-edge')
-  async setLabelEdge(
+  setLabelEdge(
     @Req() req: Request,
     @Body() body: { labelId: string; isEdge: boolean },
   ) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.labelsService.update(userId, body.labelId, { isEdge: body.isEdge });
-    this.emit(userId, 'set-label-edge', 'labels', 'update', { labelId: body.labelId });
-    return result;
+    return this.labelsService.update(userId, body.labelId, { isEdge: body.isEdge }, 'mcp');
   }
 
   @Post('set-thought-color')
-  async setThoughtColor(
+  setThoughtColor(
     @Req() req: Request,
     @Body() body: { thoughtId: string; hex: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.colorsService.setThoughtColor(userId, body.thoughtId, body.hex);
-    this.emit(userId, 'set-thought-color', 'colors', 'update', { thoughtId: body.thoughtId });
-    return result;
+    return this.thoughtsService.setColor(userId, body.thoughtId, body.hex, 'mcp');
   }
 
   @Post('clear-thought-color')
-  async clearThoughtColor(@Req() req: Request, @Body() body: { thoughtId: string }) {
+  clearThoughtColor(@Req() req: Request, @Body() body: { thoughtId: string }) {
     const userId = this.userIdFromHeaders(req);
-    const result = await this.colorsService.clearThoughtColor(userId, body.thoughtId);
-    this.emit(userId, 'clear-thought-color', 'colors', 'delete', { thoughtId: body.thoughtId });
-    return result;
+    return this.thoughtsService.clearColor(userId, body.thoughtId, 'mcp');
   }
 }

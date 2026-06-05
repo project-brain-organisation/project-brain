@@ -1,13 +1,11 @@
 import { Module } from '@nestjs/common';
-import { ColorsModule } from '../colors/colors.module';
-import { LabelsModule } from '../labels/labels.module';
-import { McpEventsModule } from '../mcp-events/mcp-events.module';
-import { ThoughtsModule } from '../thoughts/thoughts.module';
+import { ProjectsModule } from '../projects/projects.module';
+import { WorkspaceModule } from '../workspace/workspace.module';
 import { InternalMcpController } from './internal-mcp.controller';
 import { McpInternalGuard } from './mcp-internal.guard';
 
 @Module({
-  imports: [ThoughtsModule, LabelsModule, ColorsModule, McpEventsModule],
+  imports: [WorkspaceModule, ProjectsModule],
   controllers: [InternalMcpController],
   providers: [McpInternalGuard],
 })

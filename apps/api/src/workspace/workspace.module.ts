@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { ProjectsModule } from '../projects/projects.module';
+import { WorkspaceEventsService } from './gateway/workspace-events.service';
+import { WorkspaceGatewayController } from './gateway/workspace.gateway.controller';
 import { ThoughtsService } from './thoughts/thoughts.service';
 import { ThoughtsController } from './thoughts/thoughts.controller';
 import { LabelsService } from './labels/labels.service';
@@ -14,6 +16,7 @@ import { EmbeddingService } from './pipeline/embedding.service';
 @Module({
   imports: [DatabaseModule, ProjectsModule],
   providers: [
+    WorkspaceEventsService,
     ThoughtsService,
     LabelsService,
     RelationshipsService,
@@ -21,7 +24,7 @@ import { EmbeddingService } from './pipeline/embedding.service';
     ChunkingService,
     EmbeddingService,
   ],
-  controllers: [ThoughtsController, LabelsController, RelationshipsController],
-  exports: [ThoughtsService, LabelsService, RelationshipsService, PipelineService],
+  controllers: [WorkspaceGatewayController, ThoughtsController, LabelsController, RelationshipsController],
+  exports: [WorkspaceEventsService, ThoughtsService, LabelsService, RelationshipsService, PipelineService],
 })
 export class WorkspaceModule {}

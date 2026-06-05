@@ -1,8 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { ProjectsService } from '../../projects/projects.service';
 import { PipelineService } from '../pipeline/pipeline.service';
+import { WorkspaceEventsService } from '../gateway/workspace-events.service';
 import { entities, thoughts } from '../../database/schema/index';
 import { CreateThoughtDto } from './dto/create-thought.dto';
 
@@ -14,9 +15,10 @@ export class ThoughtsService {
     private readonly db: DatabaseService,
     private readonly projectsService: ProjectsService,
     private readonly pipelineService: PipelineService,
+    private readonly workspaceEvents: WorkspaceEventsService,
   ) {}
 
-  async create(userId: string, dto: CreateThoughtDto) {
+  async create(userId: string, dto: CreateThoughtDto, source: 'user' | 'mcp' = 'user') {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
     const thought = await this.db.db.transaction(async (tx) => {
@@ -37,8 +39,16 @@ export class ThoughtsService {
         })
         .returning();
 
-      // TODO(04-02): emit WorkspaceEvent { type: 'thought.created', source: 'user', id }
       return row;
+    });
+
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'thought.created',
+      source,
+      resourceId: thought.id,
+      projectId: dto.projectId,
+      timestamp: new Date().toISOString(),
     });
 
     // Fire-and-forget chunk+embed scoped to the owning project (async/background).
@@ -53,7 +63,7 @@ export class ThoughtsService {
     return thought;
   }
 
-  async updateBody(userId: string, id: string, body: string) {
+  async updateBody(userId: string, id: string, body: string, source: 'user' | 'mcp' = 'user') {
     const [entity] = await this.db.db
       .select()
       .from(entities)
@@ -79,12 +89,30 @@ export class ThoughtsService {
         this.logger.warn(`Re-chunk/embed failed for thought ${id}: ${err.message}`),
       );
 
-    // TODO(04-02): emit WorkspaceEvent { type: 'thought.updated', source: 'user', id }
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'thought.updated',
+      source,
+      resourceId: id,
+      projectId: entity.projectId,
+      timestamp: new Date().toISOString(),
+    });
+
     return updated;
   }
 
   async semanticSearch(userId: string, projectId: string, query: string, n?: number) {
     return this.pipelineService.semanticSearch(userId, projectId, query, n);
+  }
+
+  async findByProject(userId: string, projectId: string) {
+    await this.projectsService.assertOwnership(userId, projectId);
+
+    return this.db.db
+      .select({ thought: thoughts, entity: entities })
+      .from(thoughts)
+      .innerJoin(entities, eq(thoughts.id, entities.id))
+      .where(and(eq(entities.projectId, projectId), eq(entities.type, 'thought')));
   }
 
   async findOne(userId: string, id: string) {
@@ -109,8 +137,15 @@ export class ThoughtsService {
     return thought;
   }
 
-  async setColor(userId: string, id: string, color: string) {
-    await this.findOne(userId, id);
+  async setColor(userId: string, id: string, color: string, source: 'user' | 'mcp' = 'user') {
+    const [entity] = await this.db.db
+      .select()
+      .from(entities)
+      .where(eq(entities.id, id))
+      .limit(1);
+
+    if (!entity) throw new NotFoundException(`Thought ${id} not found`);
+    await this.projectsService.assertOwnership(userId, entity.projectId);
 
     const [updated] = await this.db.db
       .update(thoughts)
@@ -118,12 +153,27 @@ export class ThoughtsService {
       .where(eq(thoughts.id, id))
       .returning();
 
-    // TODO(04-02): emit WorkspaceEvent { type: 'thought.updated', source: 'user', id }
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'thought.updated',
+      source,
+      resourceId: id,
+      projectId: entity.projectId,
+      timestamp: new Date().toISOString(),
+    });
+
     return updated;
   }
 
-  async clearColor(userId: string, id: string) {
-    await this.findOne(userId, id);
+  async clearColor(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
+    const [entity] = await this.db.db
+      .select()
+      .from(entities)
+      .where(eq(entities.id, id))
+      .limit(1);
+
+    if (!entity) throw new NotFoundException(`Thought ${id} not found`);
+    await this.projectsService.assertOwnership(userId, entity.projectId);
 
     const [updated] = await this.db.db
       .update(thoughts)
@@ -131,16 +181,42 @@ export class ThoughtsService {
       .where(eq(thoughts.id, id))
       .returning();
 
-    // TODO(04-02): emit WorkspaceEvent { type: 'thought.updated', source: 'user', id }
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'thought.updated',
+      source,
+      resourceId: id,
+      projectId: entity.projectId,
+      timestamp: new Date().toISOString(),
+    });
+
     return updated;
   }
 
-  async remove(userId: string, id: string) {
-    await this.findOne(userId, id);
+  async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
+    const [entity] = await this.db.db
+      .select()
+      .from(entities)
+      .where(eq(entities.id, id))
+      .limit(1);
+
+    if (!entity) {
+      throw new NotFoundException(`Thought ${id} not found`);
+    }
+
+    await this.projectsService.assertOwnership(userId, entity.projectId);
 
     await this.db.db.delete(entities).where(eq(entities.id, id));
 
-    // TODO(04-02): emit WorkspaceEvent { type: 'thought.deleted', source: 'user', id }
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'thought.deleted',
+      source,
+      resourceId: id,
+      projectId: entity.projectId,
+      timestamp: new Date().toISOString(),
+    });
+
     return { deleted: true };
   }
 }

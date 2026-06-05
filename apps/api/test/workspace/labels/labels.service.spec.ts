@@ -18,6 +18,7 @@ import { NotFoundException } from '@nestjs/common';
 import { LabelsService } from '../../../src/workspace/labels/labels.service';
 import type { DatabaseService } from '../../../src/database/database.service';
 import type { ProjectsService } from '../../../src/projects/projects.service';
+import type { WorkspaceEventsService } from '../../../src/workspace/gateway/workspace-events.service';
 
 // ── Fluent Drizzle mock helpers ────────────────────────────────────
 
@@ -102,6 +103,10 @@ function makeProjectsServiceMock(opts: { throwOnAssert?: boolean } = {}) {
   return { assertOwnership } as unknown as ProjectsService;
 }
 
+function makeWorkspaceEventsService(): WorkspaceEventsService {
+  return { publish: jest.fn() } as unknown as WorkspaceEventsService;
+}
+
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe('LabelsService', () => {
@@ -109,7 +114,7 @@ describe('LabelsService', () => {
     it('B1: calls db.transaction and inserts into both entities and labels tables', async () => {
       const { dbService, drizzle, txInsertCalls } = makeTxMock();
       const projectsService = makeProjectsServiceMock();
-      const service = new LabelsService(dbService, projectsService);
+      const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());
 
       await service.create('user-1', {
         projectId: 'proj-uuid',
@@ -152,7 +157,7 @@ describe('LabelsService', () => {
         ),
       };
       const dbService = { db: drizzle } as unknown as DatabaseService;
-      const service = new LabelsService(dbService, projectsService);
+      const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());
 
       await service.create('user-1', { projectId: 'proj-uuid', name: 'My Label' });
 
@@ -176,7 +181,7 @@ describe('LabelsService', () => {
       };
       const dbService = { db: drizzle } as unknown as DatabaseService;
       const projectsService = makeProjectsServiceMock();
-      const service = new LabelsService(dbService, projectsService);
+      const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());
 
       await expect(
         service.create('user-1', { projectId: 'proj-uuid', name: 'Fail Label' }),
@@ -188,7 +193,7 @@ describe('LabelsService', () => {
     it('LabelsService has no assignLabel, unassignLabel, or thought_labels operations', () => {
       const { dbService } = makeTxMock();
       const projectsService = makeProjectsServiceMock();
-      const service = new LabelsService(dbService, projectsService);
+      const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());
 
       // None of these tagging methods should exist on the service
       expect((service as unknown as Record<string, unknown>)['assignLabel']).toBeUndefined();

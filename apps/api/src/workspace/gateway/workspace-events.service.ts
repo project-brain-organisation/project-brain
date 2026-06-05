@@ -1,13 +1,13 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { Subject, Observable, filter, map, finalize } from 'rxjs';
+import { Observable, Subject, filter, finalize, map } from 'rxjs';
 
-export interface McpToolEvent {
+export interface WorkspaceEvent {
   eventId: string;
-  toolName: string;
-  category: 'thoughts' | 'labels' | 'colors' | 'read';
-  operation: 'create' | 'update' | 'delete' | 'read';
+  type: string;
+  source: 'user' | 'mcp';
+  resourceId: string;
+  projectId?: string;
   timestamp: string;
-  resourceIds?: Record<string, string>;
 }
 
 export interface SseMessage {
@@ -19,30 +19,25 @@ export interface SseMessage {
 
 interface UserEvent {
   userId: string;
-  event: McpToolEvent;
+  event: WorkspaceEvent;
 }
 
 @Injectable()
-export class McpEventsService implements OnModuleDestroy {
+export class WorkspaceEventsService implements OnModuleDestroy {
   private readonly bus = new Subject<UserEvent>();
   private readonly activeStreams = new Map<string, number>();
 
-  publishToolEvent(userId: string, event: McpToolEvent) {
+  publish(userId: string, event: WorkspaceEvent) {
     this.bus.next({ userId, event });
   }
 
   streamForUser(userId: string): Observable<SseMessage> {
-    const streamKey = userId;
-    this.activeStreams.set(streamKey, (this.activeStreams.get(streamKey) ?? 0) + 1);
+    this.activeStreams.set(userId, (this.activeStreams.get(userId) ?? 0) + 1);
 
     const heartbeat$ = new Observable<SseMessage>((subscriber) => {
       const interval = setInterval(() => {
-        subscriber.next({
-          data: { ts: new Date().toISOString() },
-          type: 'mcp.heartbeat',
-        });
+        subscriber.next({ data: { ts: new Date().toISOString() }, type: 'workspace.heartbeat' });
       }, 25_000);
-
       return () => clearInterval(interval);
     });
 
@@ -52,25 +47,21 @@ export class McpEventsService implements OnModuleDestroy {
         (ue): SseMessage => ({
           data: ue.event,
           id: ue.event.eventId,
-          type: 'mcp.tool.used',
+          type: 'workspace.event',
         }),
       ),
     );
 
     return new Observable<SseMessage>((subscriber) => {
-      const subs = [
-        events$.subscribe(subscriber),
-        heartbeat$.subscribe(subscriber),
-      ];
-
+      const subs = [events$.subscribe(subscriber), heartbeat$.subscribe(subscriber)];
       return () => subs.forEach((s) => s.unsubscribe());
     }).pipe(
       finalize(() => {
-        const count = (this.activeStreams.get(streamKey) ?? 1) - 1;
+        const count = (this.activeStreams.get(userId) ?? 1) - 1;
         if (count <= 0) {
-          this.activeStreams.delete(streamKey);
+          this.activeStreams.delete(userId);
         } else {
-          this.activeStreams.set(streamKey, count);
+          this.activeStreams.set(userId, count);
         }
       }),
     );

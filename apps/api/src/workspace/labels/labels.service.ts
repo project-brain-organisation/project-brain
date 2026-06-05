@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { ProjectsService } from '../../projects/projects.service';
+import { WorkspaceEventsService } from '../gateway/workspace-events.service';
 import { entities, labels } from '../../database/schema/index';
 import { CreateLabelDto } from './dto/create-label.dto';
 import { UpdateLabelDto } from './dto/update-label.dto';
@@ -11,12 +12,13 @@ export class LabelsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly projectsService: ProjectsService,
+    private readonly workspaceEvents: WorkspaceEventsService,
   ) {}
 
-  async create(userId: string, dto: CreateLabelDto) {
+  async create(userId: string, dto: CreateLabelDto, source: 'user' | 'mcp' = 'user') {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
-    return this.db.db.transaction(async (tx) => {
+    const label = await this.db.db.transaction(async (tx) => {
       const id = crypto.randomUUID();
 
       await tx
@@ -24,7 +26,7 @@ export class LabelsService {
         .values({ id, projectId: dto.projectId, type: 'label' })
         .returning();
 
-      const [label] = await tx
+      const [row] = await tx
         .insert(labels)
         .values({
           id,
@@ -34,9 +36,19 @@ export class LabelsService {
         })
         .returning();
 
-      // TODO(04-02): emit WorkspaceEvent { type: 'label.created', source: 'user', id }
-      return label;
+      return row;
     });
+
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'label.created',
+      source,
+      resourceId: label.id,
+      projectId: dto.projectId,
+      timestamp: new Date().toISOString(),
+    });
+
+    return label;
   }
 
   async findByProject(userId: string, projectId: string) {
@@ -71,8 +83,15 @@ export class LabelsService {
     return label;
   }
 
-  async update(userId: string, id: string, dto: UpdateLabelDto) {
-    await this.findOne(userId, id);
+  async update(userId: string, id: string, dto: UpdateLabelDto, source: 'user' | 'mcp' = 'user') {
+    const [entity] = await this.db.db
+      .select()
+      .from(entities)
+      .where(eq(entities.id, id))
+      .limit(1);
+
+    if (!entity) throw new NotFoundException(`Label ${id} not found`);
+    await this.projectsService.assertOwnership(userId, entity.projectId);
 
     const [updated] = await this.db.db
       .update(labels)
@@ -84,16 +103,39 @@ export class LabelsService {
       .where(eq(labels.id, id))
       .returning();
 
-    // TODO(04-02): emit WorkspaceEvent { type: 'label.updated', source: 'user', id }
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'label.updated',
+      source,
+      resourceId: id,
+      projectId: entity.projectId,
+      timestamp: new Date().toISOString(),
+    });
+
     return updated;
   }
 
-  async remove(userId: string, id: string) {
-    await this.findOne(userId, id);
+  async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
+    const [entity] = await this.db.db
+      .select()
+      .from(entities)
+      .where(eq(entities.id, id))
+      .limit(1);
+
+    if (!entity) throw new NotFoundException(`Label ${id} not found`);
+    await this.projectsService.assertOwnership(userId, entity.projectId);
 
     await this.db.db.delete(entities).where(eq(entities.id, id));
 
-    // TODO(04-02): emit WorkspaceEvent { type: 'label.deleted', source: 'user', id }
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'label.deleted',
+      source,
+      resourceId: id,
+      projectId: entity.projectId,
+      timestamp: new Date().toISOString(),
+    });
+
     return { deleted: true };
   }
 }
