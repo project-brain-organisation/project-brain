@@ -30,6 +30,7 @@ export class LabelsService {
         .insert(labels)
         .values({
           id,
+          projectId: dto.projectId,
           name: dto.name,
           color: dto.color ?? '#999999',
           isEdge: dto.isEdge ?? false,
@@ -57,41 +58,34 @@ export class LabelsService {
     return this.db.db
       .select()
       .from(labels)
-      .innerJoin(entities, eq(labels.id, entities.id))
-      .where(eq(entities.projectId, projectId));
+      .where(eq(labels.projectId, projectId));
   }
 
   async findOne(userId: string, id: string) {
-    const [entity] = await this.db.db
-      .select()
-      .from(entities)
-      .where(eq(entities.id, id))
-      .limit(1);
-
-    if (!entity) {
-      throw new NotFoundException(`Label ${id} not found`);
-    }
-
-    await this.projectsService.assertOwnership(userId, entity.projectId);
-
     const [label] = await this.db.db
       .select()
       .from(labels)
       .where(eq(labels.id, id))
       .limit(1);
 
+    if (!label) {
+      throw new NotFoundException(`Label ${id} not found`);
+    }
+
+    await this.projectsService.assertOwnership(userId, label.projectId);
+
     return label;
   }
 
   async update(userId: string, id: string, dto: UpdateLabelDto, source: 'user' | 'mcp' = 'user') {
-    const [entity] = await this.db.db
+    const [label] = await this.db.db
       .select()
-      .from(entities)
-      .where(eq(entities.id, id))
+      .from(labels)
+      .where(eq(labels.id, id))
       .limit(1);
 
-    if (!entity) throw new NotFoundException(`Label ${id} not found`);
-    await this.projectsService.assertOwnership(userId, entity.projectId);
+    if (!label) throw new NotFoundException(`Label ${id} not found`);
+    await this.projectsService.assertOwnership(userId, label.projectId);
 
     const [updated] = await this.db.db
       .update(labels)
@@ -108,7 +102,7 @@ export class LabelsService {
       type: 'label.updated',
       source,
       resourceId: id,
-      projectId: entity.projectId,
+      projectId: label.projectId,
       timestamp: new Date().toISOString(),
     });
 
@@ -116,14 +110,14 @@ export class LabelsService {
   }
 
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
-    const [entity] = await this.db.db
+    const [label] = await this.db.db
       .select()
-      .from(entities)
-      .where(eq(entities.id, id))
+      .from(labels)
+      .where(eq(labels.id, id))
       .limit(1);
 
-    if (!entity) throw new NotFoundException(`Label ${id} not found`);
-    await this.projectsService.assertOwnership(userId, entity.projectId);
+    if (!label) throw new NotFoundException(`Label ${id} not found`);
+    await this.projectsService.assertOwnership(userId, label.projectId);
 
     await this.db.db.delete(entities).where(eq(entities.id, id));
 
@@ -132,7 +126,7 @@ export class LabelsService {
       type: 'label.deleted',
       source,
       resourceId: id,
-      projectId: entity.projectId,
+      projectId: label.projectId,
       timestamp: new Date().toISOString(),
     });
 
