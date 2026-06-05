@@ -20,6 +20,9 @@
  *
  * DatabaseService and ProjectsService are mocked at the driven port boundary.
  * No mocks inside the hexagonal domain.
+ *
+ * review-revision: all db doubles updated from db.db.transaction/select to db.asUser()
+ * to match the RLS-wrapping added in the review-revision pass.
  */
 
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
@@ -53,7 +56,7 @@ function makeProjectsService(throws?: Error): ProjectsService {
   } as unknown as ProjectsService;
 }
 
-// ── Drizzle chain helpers ─────────────────────────────────────────
+// ── Drizzle tx chain helpers ─────────────────────────────────────
 
 function makeSelectChain(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
@@ -78,9 +81,9 @@ function makeDeleteChain() {
   return chain;
 }
 
-/** Build a transaction mock that returns the supplied thought/entity rows. */
+/** Build a tx for thoughts create — tracks insert calls to entities and thoughts tables. */
 function makeTxForThought(entityRow: unknown, thoughtRow: unknown) {
-  const tx = {
+  return {
     insert: jest.fn((table: Record<string, unknown>) => {
       const tableName = (table as any)[Symbol.for('drizzle:Name')] ?? 'unknown';
       const rows = tableName === 'entities' ? [entityRow] : [thoughtRow];
@@ -89,13 +92,15 @@ function makeTxForThought(entityRow: unknown, thoughtRow: unknown) {
       chain.returning = jest.fn().mockResolvedValue(rows);
       return chain;
     }),
+    select: jest.fn().mockReturnValue(makeSelectChain([])),
+    update: jest.fn().mockReturnValue(makeUpdateChain([])),
+    delete: jest.fn().mockReturnValue(makeDeleteChain()),
   };
-  return tx;
 }
 
-/** Build a transaction mock that returns the supplied label/entity rows. */
+/** Build a tx for labels create — identifies table by presence of 'name' column. */
 function makeTxForLabel(labelRow: unknown) {
-  const tx = {
+  return {
     insert: jest.fn((table: unknown) => {
       const tbl = table as Record<string, unknown>;
       const hasNameCol = tbl && typeof tbl === 'object' && 'name' in tbl;
@@ -106,30 +111,36 @@ function makeTxForLabel(labelRow: unknown) {
         .mockResolvedValue(hasNameCol ? [labelRow] : [{ id: 'ent-uuid', projectId: 'proj-1' }]);
       return chain;
     }),
-  };
-  return tx;
-}
-
-function makeDbForCreate(tx: unknown): DatabaseService {
-  const drizzle = {
     select: jest.fn().mockReturnValue(makeSelectChain([])),
     update: jest.fn().mockReturnValue(makeUpdateChain([])),
     delete: jest.fn().mockReturnValue(makeDeleteChain()),
-    transaction: jest
-      .fn()
-      .mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx)),
   };
-  return { db: drizzle } as unknown as DatabaseService;
 }
 
+/**
+ * DatabaseService double for create() paths.
+ * asUser() routes callback through the supplied tx double.
+ * Exposes asUser spy so tests can assert it was NOT called when ownership check fails.
+ */
+function makeDbForCreate(tx: unknown): { db: DatabaseService; asUser: jest.Mock } {
+  const asUser = jest.fn((_userId: string, cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+  return { db: { asUser } as unknown as DatabaseService, asUser };
+}
+
+/**
+ * DatabaseService double for read/update/delete paths.
+ * asUser() routes callback through a tx that has select/update/delete returning the given rows.
+ */
 function makeDbForRead(rows: unknown[]): DatabaseService {
-  const drizzle = {
+  const tx = {
     select: jest.fn().mockReturnValue(makeSelectChain(rows)),
     update: jest.fn().mockReturnValue(makeUpdateChain(rows)),
     delete: jest.fn().mockReturnValue(makeDeleteChain()),
-    transaction: jest.fn(),
+    execute: jest.fn().mockResolvedValue({ rows: [] }),
+    insert: jest.fn(),
   };
-  return { db: drizzle } as unknown as DatabaseService;
+  const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+  return { asUser } as unknown as DatabaseService;
 }
 
 // ── B1: create() retains the project-type FK check via assertOwnership ──
@@ -148,14 +159,14 @@ describe('B1 — create() retains assertOwnership for project-type FK invariant'
       const projectsService = makeProjectsService(forbidden);
       const entityRow = { id: 'ent', projectId: dto.projectId, type: 'thought' };
       const thoughtRow = { id: 'ent', projectId: dto.projectId, body: dto.body, title: '', color: null };
-      const db = makeDbForCreate(makeTxForThought(entityRow, thoughtRow));
+      const { db, asUser } = makeDbForCreate(makeTxForThought(entityRow, thoughtRow));
 
       const service = new ThoughtsService(db, projectsService, makePipeline(), makeEvents());
 
       await expect(service.create('user-1', dto)).rejects.toThrow(ForbiddenException);
       expect(projectsService.assertOwnership).toHaveBeenCalledWith('user-1', dto.projectId);
-      // DB transaction must NOT have been called when ownership check fails
-      expect((db.db as unknown as Record<string, jest.Mock>).transaction).not.toHaveBeenCalled();
+      // asUser must NOT have been called when ownership check fails
+      expect(asUser).not.toHaveBeenCalled();
     },
   );
 
@@ -169,7 +180,7 @@ describe('B1 — create() retains assertOwnership for project-type FK invariant'
       const forbidden = new ForbiddenException('Project not found or access denied');
       const projectsService = makeProjectsService(forbidden);
       const labelRow = { id: 'lbl', projectId: dto.projectId, name: dto.name, color: '#999999', isEdge: false };
-      const db = makeDbForCreate(makeTxForLabel(labelRow));
+      const { db } = makeDbForCreate(makeTxForLabel(labelRow));
 
       const service = new LabelsService(db, projectsService, makeEvents());
 
@@ -192,12 +203,7 @@ describe('B2 — read paths do NOT call assertOwnership (RLS enforces isolation)
   };
 
   it('ThoughtsService.findOne() returns row without calling assertOwnership', async () => {
-    // assertOwnership is wired to throw — if called, test fails
-    const projectsService = makeProjectsService(
-      new ForbiddenException('should not be called'),
-    );
-    // Override: we want assertOwnership NOT called, not to throw so findOne fails.
-    // Set it back to resolve so if it IS called we can detect via call count.
+    const projectsService = makeProjectsService();
     (projectsService.assertOwnership as jest.Mock).mockResolvedValue(undefined);
 
     const db = makeDbForRead([thoughtRow]);
@@ -219,13 +225,14 @@ describe('B2 — read paths do NOT call assertOwnership (RLS enforces isolation)
     selectChain.where = jest.fn().mockResolvedValue([thoughtRow]);
     selectChain.limit = jest.fn().mockResolvedValue([thoughtRow]);
 
-    const drizzle = {
+    const tx = {
       select: jest.fn().mockReturnValue(selectChain),
       update: jest.fn().mockReturnValue(makeUpdateChain([])),
       delete: jest.fn().mockReturnValue(makeDeleteChain()),
-      transaction: jest.fn(),
+      insert: jest.fn(),
     };
-    const db = { db: drizzle } as unknown as DatabaseService;
+    const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+    const db = { asUser } as unknown as DatabaseService;
     const service = new ThoughtsService(db, projectsService, makePipeline(), makeEvents());
 
     await service.findByProject('user-1', 'proj-1');
@@ -288,13 +295,7 @@ describe('B3 — NotFoundException still fires on missing rows (RLS makes unauth
 
   it('RelationshipsService.findOne() throws NotFoundException for missing relationship', async () => {
     const projectsService = makeProjectsService();
-    const drizzle = {
-      select: jest.fn().mockReturnValue(makeSelectChain([])),
-      delete: jest.fn().mockReturnValue(makeDeleteChain()),
-      execute: jest.fn().mockResolvedValue({ rows: [] }),
-      insert: jest.fn(),
-    };
-    const db = { db: drizzle } as unknown as DatabaseService;
+    const db = makeDbForRead([]);
     const service = new RelationshipsService(db, projectsService, makeEvents());
 
     await expect(service.findOne('user-1', 'nonexistent')).rejects.toThrow(NotFoundException);

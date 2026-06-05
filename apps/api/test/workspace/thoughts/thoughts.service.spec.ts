@@ -6,7 +6,7 @@
  * Test Budget: 6 distinct behaviors × 2 = 12 max unit tests
  * Behaviors:
  *   B1: create() calls assertOwnership before any DB operation
- *   B2: create() runs db.transaction inserting paired entities + thoughts rows,
+ *   B2: create() runs asUser inserting paired entities + thoughts rows,
  *       with thoughts row carrying projectId = dto.projectId
  *   B3: findByProject() filters on thoughts.projectId — no innerJoin on entities
  *   B4: by-id methods (setColor, clearColor, remove, updateBody) resolve scope
@@ -39,7 +39,7 @@ function makeWorkspaceEventsService(): WorkspaceEventsService {
   return { publish: jest.fn() } as unknown as WorkspaceEventsService;
 }
 
-// ── Fluent Drizzle mock helpers ────────────────────────────────────
+// ── Fluent Drizzle tx mock helpers ─────────────────────────────────
 
 function makeSelectChain(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
@@ -65,8 +65,8 @@ function makeDeleteChain() {
 }
 
 /**
- * Build transaction mock that tracks insert calls to entities and thoughts tables
- * and captures the values passed to each insert.
+ * Build transaction tx mock that tracks insert calls to entities and thoughts tables.
+ * The tx object is passed as the argument to the asUser() callback.
  */
 function makeTxMock(entityRow: unknown, thoughtRow: unknown) {
   const txInsertCalls: Array<{ tableName: string; values: Record<string, unknown> }> = [];
@@ -87,20 +87,32 @@ function makeTxMock(entityRow: unknown, thoughtRow: unknown) {
       const rows = tableName === 'entities' ? [entityRow] : [thoughtRow];
       return makeTxInsertChain(tableName, rows);
     }),
+    select: jest.fn().mockReturnValue(makeSelectChain([])),
+    update: jest.fn().mockReturnValue(makeUpdateChain([])),
+    delete: jest.fn().mockReturnValue(makeDeleteChain()),
   };
 
   return { tx, txInsertCalls };
 }
 
-function makeDbService(overrides: Partial<ReturnType<typeof makeDbService>> = {}) {
-  const drizzle = {
+/**
+ * Build a DatabaseService mock where asUser() routes the callback through a tx double.
+ * This mirrors the real DatabaseService.asUser() shape — the callback receives a tx.
+ */
+function makeDbService(txOverride?: ReturnType<typeof makeTxMock>['tx']) {
+  const defaultTx = {
     select: jest.fn().mockReturnValue(makeSelectChain([])),
     update: jest.fn().mockReturnValue(makeUpdateChain([])),
     delete: jest.fn().mockReturnValue(makeDeleteChain()),
-    transaction: jest.fn(),
-    ...overrides,
+    insert: jest.fn(),
   };
-  return { db: drizzle } as unknown as DatabaseService;
+  const tx = txOverride ?? defaultTx;
+
+  const asUser = jest.fn(
+    (_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
+  );
+
+  return { asUser, tx, dbService: { asUser } as unknown as DatabaseService };
 }
 
 function makeProjectsService(assertOwnershipImpl?: () => Promise<void>) {
@@ -131,45 +143,33 @@ describe('WorkspaceThoughtsService', () => {
       const thoughtRow = { id: 'entity-uuid', projectId: 'proj-1', body: 'hello', title: '', color: null };
       const { tx, txInsertCalls } = makeTxMock(entityRow, thoughtRow);
 
-      const drizzle = {
-        select: jest.fn().mockReturnValue(makeSelectChain([])),
-        update: jest.fn().mockReturnValue(makeUpdateChain([])),
-        delete: jest.fn().mockReturnValue(makeDeleteChain()),
-        transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
-          callOrder.push('transaction');
-          return cb(tx);
-        }),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: unknown) => Promise<unknown>) => {
+        callOrder.push('asUser');
+        return cb(tx);
+      });
+      const dbService = { asUser } as unknown as DatabaseService;
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
       await service.create('user-1', { projectId: 'proj-1', body: 'hello' });
 
       expect(callOrder[0]).toBe('assertOwnership');
-      expect(callOrder[1]).toBe('transaction');
+      expect(callOrder[1]).toBe('asUser');
       void txInsertCalls; // suppress unused warning — tracked for B2
     });
 
-    it('runs db.transaction inserting into both entities and thoughts tables', async () => {
+    it('runs asUser inserting into both entities and thoughts tables', async () => {
       const entityRow = { id: 'entity-uuid', projectId: 'proj-1', type: 'thought' };
       const thoughtRow = { id: 'entity-uuid', projectId: 'proj-1', body: 'hello', title: '', color: null };
       const { tx, txInsertCalls } = makeTxMock(entityRow, thoughtRow);
 
-      const drizzle = {
-        select: jest.fn().mockReturnValue(makeSelectChain([])),
-        update: jest.fn().mockReturnValue(makeUpdateChain([])),
-        delete: jest.fn().mockReturnValue(makeDeleteChain()),
-        transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-          cb(tx),
-        ),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
       const result = await service.create('user-1', { projectId: 'proj-1', body: 'hello' });
 
-      expect(drizzle.transaction).toHaveBeenCalledTimes(1);
+      expect(asUser).toHaveBeenCalledTimes(1);
       const tableNames = txInsertCalls.map((c) => c.tableName);
       expect(tableNames).toContain('entities');
       expect(tableNames).toContain('thoughts');
@@ -182,15 +182,8 @@ describe('WorkspaceThoughtsService', () => {
       const thoughtRow = { id: 'entity-uuid', projectId: 'proj-1', body: 'hello', title: '', color: null };
       const { tx, txInsertCalls } = makeTxMock(entityRow, thoughtRow);
 
-      const drizzle = {
-        select: jest.fn().mockReturnValue(makeSelectChain([])),
-        update: jest.fn().mockReturnValue(makeUpdateChain([])),
-        delete: jest.fn().mockReturnValue(makeDeleteChain()),
-        transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-          cb(tx),
-        ),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
@@ -202,21 +195,14 @@ describe('WorkspaceThoughtsService', () => {
       expect(thoughtsInsert!.values).toMatchObject({ projectId: 'proj-1' });
     });
 
-    it('propagates transaction failure — rolls back both inserts', async () => {
+    it('propagates asUser failure — rolls back both inserts', async () => {
       const tx = {
         insert: jest.fn().mockImplementation(() => {
           throw new Error('DB constraint violation');
         }),
       };
-      const drizzle = {
-        select: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
-        transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) =>
-          cb(tx),
-        ),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
@@ -229,7 +215,7 @@ describe('WorkspaceThoughtsService', () => {
       const projectsService = makeProjectsService(() =>
         Promise.reject(new ForbiddenException('Project not found or access denied')),
       );
-      const dbService = makeDbService();
+      const { dbService, asUser } = makeDbService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
       await expect(
@@ -237,7 +223,7 @@ describe('WorkspaceThoughtsService', () => {
       ).rejects.toThrow(ForbiddenException);
 
       // DB must never be called
-      expect((dbService.db as unknown as Record<string, jest.Mock>).transaction).not.toHaveBeenCalled();
+      expect(asUser).not.toHaveBeenCalled();
     });
   });
 
@@ -246,8 +232,6 @@ describe('WorkspaceThoughtsService', () => {
   describe('findByProject', () => {
     // bypass: fallback — Jest example-based test; fast-check not installed in this workspace
     it('filters thoughts.projectId directly — does NOT innerJoin entities (AC2)', async () => {
-      // findByProject terminates at .where() (no .limit()), so the chain must
-      // resolve at that point. Build a chain where .where() is the terminal resolver.
       const rows = [
         { id: 'thought-1', projectId: 'proj-1', body: 'hello', title: '', color: null },
         { id: 'thought-2', projectId: 'proj-1', body: 'world', title: '', color: null },
@@ -257,15 +241,15 @@ describe('WorkspaceThoughtsService', () => {
       selectChain.innerJoin = jest.fn().mockReturnValue(selectChain);
       selectChain.where = jest.fn().mockResolvedValue(rows);
       selectChain.limit = jest.fn().mockResolvedValue(rows);
-      const selectSpy = jest.fn().mockReturnValue(selectChain);
 
-      const drizzle = {
-        select: selectSpy,
+      const tx = {
+        select: jest.fn().mockReturnValue(selectChain),
         update: jest.fn().mockReturnValue(makeUpdateChain([])),
         delete: jest.fn().mockReturnValue(makeDeleteChain()),
-        transaction: jest.fn(),
+        insert: jest.fn(),
       };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
@@ -283,39 +267,34 @@ describe('WorkspaceThoughtsService', () => {
   describe('setColor', () => {
     // bypass: fallback — Jest example-based test; fast-check not installed in this workspace
     it('resolves scope from thought row — no entities query first (AC3)', async () => {
-      // After refactor: single select from thoughts (not entities then thoughts)
+      // setColor does two asUser calls: one select, one update
       const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: null };
-
-      let selectCallCount = 0;
-      const selectChain = {
-        from: jest.fn().mockReturnThis(),
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockImplementation(() => {
-          selectCallCount++;
-          // After refactor: first select is from thoughts, returns thoughtRow
-          return Promise.resolve([thoughtRow]);
-        }),
-      };
-
       const updatedRow = { ...thoughtRow, color: '#ff0000' };
-      const updateChain = makeUpdateChain([updatedRow]);
-      const updateSpy = jest.fn().mockReturnValue(updateChain);
 
-      const drizzle = {
-        select: jest.fn().mockReturnValue(selectChain),
-        update: updateSpy,
+      let asUserCallCount = 0;
+      const tx = {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([thoughtRow]),
+        }),
+        update: jest.fn().mockReturnValue(makeUpdateChain([updatedRow])),
         delete: jest.fn().mockReturnValue(makeDeleteChain()),
-        transaction: jest.fn(),
+        insert: jest.fn(),
       };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => {
+        asUserCallCount++;
+        return cb(tx);
+      });
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
       const result = await service.setColor('user-1', 'thought-1', '#ff0000');
 
-      // AC3: only one select call (from thoughts, not entities-then-thoughts N+1)
-      expect(selectCallCount).toBe(1);
+      // AC3: two asUser calls (select + update), not entities-then-thoughts N+1
+      expect(asUserCallCount).toBe(2);
       // Step 04-01: assertOwnership removed from setColor path (RLS enforces isolation).
       expect(projectsService.assertOwnership).not.toHaveBeenCalled();
       expect(result).toMatchObject({ color: '#ff0000' });
@@ -323,23 +302,20 @@ describe('WorkspaceThoughtsService', () => {
 
     it('clears thoughts.color to null when clearColor is called', async () => {
       const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: '#ff0000' };
-
-      const selectChain = {
-        from: jest.fn().mockReturnThis(),
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([thoughtRow]),
-      };
-
       const updatedRow = { ...thoughtRow, color: null };
-      const updateChain = makeUpdateChain([updatedRow]);
-      const drizzle = {
-        select: jest.fn().mockReturnValue(selectChain),
-        update: jest.fn().mockReturnValue(updateChain),
+
+      const tx = {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([thoughtRow]),
+        }),
+        update: jest.fn().mockReturnValue(makeUpdateChain([updatedRow])),
         delete: jest.fn().mockReturnValue(makeDeleteChain()),
-        transaction: jest.fn(),
+        insert: jest.fn(),
       };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
@@ -355,24 +331,19 @@ describe('WorkspaceThoughtsService', () => {
     it('deletes from the entities table (not thoughts directly), relying on cascade', async () => {
       const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: null };
 
-      const selectChain = {
-        from: jest.fn().mockReturnThis(),
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        // After refactor: single select from thoughts
-        limit: jest.fn().mockResolvedValue([thoughtRow]),
-      };
-
-      const deleteChain = makeDeleteChain();
-      const deleteSpy = jest.fn().mockReturnValue(deleteChain);
-
-      const drizzle = {
-        select: jest.fn().mockReturnValue(selectChain),
+      const deleteSpy = jest.fn().mockReturnValue(makeDeleteChain());
+      const tx = {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([thoughtRow]),
+        }),
         update: jest.fn().mockReturnValue(makeUpdateChain([])),
         delete: deleteSpy,
-        transaction: jest.fn(),
+        insert: jest.fn(),
       };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
@@ -388,20 +359,18 @@ describe('WorkspaceThoughtsService', () => {
 
     // bypass: fallback — Jest example-based test; fast-check not installed in this workspace
     it('throws NotFoundException when thought row does not exist (AC4 — scope from thought)', async () => {
-      // After refactor: select from thoughts returns empty (not entities)
-      const selectChain = {
-        from: jest.fn().mockReturnThis(),
-        innerJoin: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([]),
-      };
-      const drizzle = {
-        select: jest.fn().mockReturnValue(selectChain),
+      const tx = {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([]),
+        }),
         update: jest.fn(),
         delete: jest.fn(),
-        transaction: jest.fn(),
+        insert: jest.fn(),
       };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 

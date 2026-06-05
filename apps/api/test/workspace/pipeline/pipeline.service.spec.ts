@@ -18,6 +18,7 @@
  * added in step 02-02 without changing the behavioral assertions.
  * Note (step 04-01): ProjectsService removed from PipelineService constructor;
  * semanticSearch ownership-gate tests updated to reflect RLS enforcement.
+ * Note (review-revision): semanticSearch now calls asUser() — execute spy lives on tx double.
  */
 
 import { PipelineService } from '../../../src/workspace/pipeline/pipeline.service';
@@ -36,6 +37,10 @@ function makeEmbeddingService(vectors: number[][]): EmbeddingService {
 /**
  * Persistence double recording insert values and update filters so the test can
  * assert the project_id propagation contract at the driven-port boundary.
+ *
+ * The tx double is shared by both asUser() calls in chunkAndEmbed (insert + update)
+ * and the asUser() call in semanticSearch (execute). This keeps the double minimal
+ * while satisfying the RLS wiring added in step-02-02 and review-revision.
  */
 function makePersistenceDb() {
   const insertValues: Record<string, unknown>[] = [];
@@ -52,24 +57,29 @@ function makePersistenceDb() {
     where: jest.fn().mockResolvedValue(undefined),
   };
 
-  const drizzle = {
+  // execute spy lives on tx so that semanticSearch (which calls asUser → tx.execute)
+  // and callers that previously accessed db.db.execute directly both resolve correctly.
+  const executeSpy = jest.fn().mockResolvedValue({ rows: [] });
+
+  const tx = {
     insert: jest.fn().mockReturnValue(insertChain),
     update: jest.fn().mockReturnValue(updateChain),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
-    execute: jest.fn().mockResolvedValue({ rows: [] }),
+    execute: executeSpy,
   };
 
-  // asUser routes the callback through the same drizzle tx double so that
-  // step-02-02 RLS wiring in PipelineService is satisfied without a live DB.
+  // asUser routes the callback through the same tx double so that all RLS-wrapped
+  // calls in PipelineService are satisfied without a live DB.
   const asUser = jest.fn(
-    (_userId: string, cb: (tx: typeof drizzle) => Promise<unknown>) => cb(drizzle),
+    (_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
   );
 
   return {
-    dbService: { db: drizzle, asUser } as unknown as DatabaseService,
+    dbService: { asUser } as unknown as DatabaseService,
     insertValues,
-    drizzle,
+    tx,
     asUser,
+    executeSpy,
   };
 }
 
@@ -112,11 +122,12 @@ describe('WorkspacePipelineService', () => {
   describe('semanticSearch', () => {
     // Step 04-01: assertOwnership removed from semanticSearch; RLS on chunks table
     // scopes the similarity query to the current user's rows automatically.
+    // review-revision: semanticSearch now calls asUser() — execute spy lives on tx.
     // The test verifies the SQL still scopes by project_id (not user_id).
 
     it('scopes the similarity query by the owning project_id (ownership via RLS)', async () => {
-      const { dbService, drizzle } = makePersistenceDb();
-      drizzle.execute.mockResolvedValue({
+      const { dbService, tx, executeSpy } = makePersistenceDb();
+      executeSpy.mockResolvedValue({
         rows: [{ chunkId: 'c1', thoughtId: 't1', body: 'match', score: 0.9 }],
       });
       const embedding = makeEmbeddingService([[0.5, 0.5]]);
@@ -128,13 +139,13 @@ describe('WorkspacePipelineService', () => {
 
       const results = await service.semanticSearch('owner', 'proj-7', 'find me');
 
-      expect(drizzle.execute).toHaveBeenCalledTimes(1);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
 
       // The parameterized SQL must scope by the owning project_id and must NOT
       // reference a user_id column. drizzle's SQL object interleaves literal text
       // (StringChunk { value: string[] }) with bound values directly inside
       // queryChunks.
-      const sqlArg = drizzle.execute.mock.calls[0][0] as {
+      const sqlArg = executeSpy.mock.calls[0][0] as {
         queryChunks?: unknown[];
       };
       const queryChunks = sqlArg.queryChunks ?? [];
@@ -157,6 +168,8 @@ describe('WorkspacePipelineService', () => {
       expect(results).toEqual([
         { chunkId: 'c1', thoughtId: 't1', body: 'match', score: 0.9 },
       ]);
+
+      void tx; // suppress unused warning
     });
   });
 });

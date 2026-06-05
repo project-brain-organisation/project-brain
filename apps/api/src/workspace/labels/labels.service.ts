@@ -18,7 +18,7 @@ export class LabelsService {
   async create(userId: string, dto: CreateLabelDto, source: 'user' | 'mcp' = 'user') {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
-    const label = await this.db.db.transaction(async (tx) => {
+    const label = await this.db.asUser(userId, async (tx) => {
       const id = crypto.randomUUID();
 
       await tx
@@ -55,18 +55,23 @@ export class LabelsService {
 
   async findByProject(userId: string, projectId: string) {
     // Ownership isolation enforced by RLS; assertOwnership removed on read path.
-    return this.db.db
-      .select()
-      .from(labels)
-      .where(eq(labels.projectId, projectId));
+    return this.db.asUser(userId, async (tx) =>
+      tx
+        .select()
+        .from(labels)
+        .where(eq(labels.projectId, projectId)),
+    );
   }
 
   async findOne(userId: string, id: string) {
-    const [label] = await this.db.db
-      .select()
-      .from(labels)
-      .where(eq(labels.id, id))
-      .limit(1);
+    const label = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(labels)
+        .where(eq(labels.id, id))
+        .limit(1);
+      return row;
+    });
 
     if (!label) {
       throw new NotFoundException(`Label ${id} not found`);
@@ -78,24 +83,29 @@ export class LabelsService {
   }
 
   async update(userId: string, id: string, dto: UpdateLabelDto, source: 'user' | 'mcp' = 'user') {
-    const [label] = await this.db.db
-      .select()
-      .from(labels)
-      .where(eq(labels.id, id))
-      .limit(1);
+    const label = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(labels)
+        .where(eq(labels.id, id))
+        .limit(1);
+      return row;
+    });
 
     if (!label) throw new NotFoundException(`Label ${id} not found`);
     // Ownership isolation enforced by RLS; assertOwnership removed on update path.
 
-    const [updated] = await this.db.db
-      .update(labels)
-      .set({
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.color !== undefined && { color: dto.color }),
-        ...(dto.isEdge !== undefined && { isEdge: dto.isEdge }),
-      })
-      .where(eq(labels.id, id))
-      .returning();
+    const [updated] = await this.db.asUser(userId, async (tx) =>
+      tx
+        .update(labels)
+        .set({
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.color !== undefined && { color: dto.color }),
+          ...(dto.isEdge !== undefined && { isEdge: dto.isEdge }),
+        })
+        .where(eq(labels.id, id))
+        .returning(),
+    );
 
     this.workspaceEvents.publish(userId, {
       eventId: crypto.randomUUID(),
@@ -110,16 +120,21 @@ export class LabelsService {
   }
 
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
-    const [label] = await this.db.db
-      .select()
-      .from(labels)
-      .where(eq(labels.id, id))
-      .limit(1);
+    const label = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(labels)
+        .where(eq(labels.id, id))
+        .limit(1);
+      return row;
+    });
 
     if (!label) throw new NotFoundException(`Label ${id} not found`);
     // Ownership isolation enforced by RLS; assertOwnership removed on delete path.
 
-    await this.db.db.delete(entities).where(eq(entities.id, id));
+    await this.db.asUser(userId, async (tx) =>
+      tx.delete(entities).where(eq(entities.id, id)),
+    );
 
     this.workspaceEvents.publish(userId, {
       eventId: crypto.randomUUID(),

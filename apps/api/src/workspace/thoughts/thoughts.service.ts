@@ -21,7 +21,7 @@ export class ThoughtsService {
   async create(userId: string, dto: CreateThoughtDto, source: 'user' | 'mcp' = 'user') {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
-    const thought = await this.db.db.transaction(async (tx) => {
+    const thought = await this.db.asUser(userId, async (tx) => {
       const id = crypto.randomUUID();
 
       await tx
@@ -66,11 +66,14 @@ export class ThoughtsService {
   }
 
   async updateBody(userId: string, id: string, body: string, source: 'user' | 'mcp' = 'user') {
-    const [thought] = await this.db.db
-      .select()
-      .from(thoughts)
-      .where(eq(thoughts.id, id))
-      .limit(1);
+    const thought = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(thoughts)
+        .where(eq(thoughts.id, id))
+        .limit(1);
+      return row;
+    });
 
     if (!thought) {
       throw new NotFoundException(`Thought ${id} not found`);
@@ -80,11 +83,13 @@ export class ThoughtsService {
     // assertOwnership removed — RLS makes unauthorized rows invisible, so
     // the NotFoundException above fires for both missing and unauthorized rows.
 
-    const [updated] = await this.db.db
-      .update(thoughts)
-      .set({ body })
-      .where(eq(thoughts.id, id))
-      .returning();
+    const [updated] = await this.db.asUser(userId, async (tx) =>
+      tx
+        .update(thoughts)
+        .set({ body })
+        .where(eq(thoughts.id, id))
+        .returning(),
+    );
 
     // Re-chunk + re-embed on body edit (async/background, project-scoped).
     this.pipelineService
@@ -112,18 +117,23 @@ export class ThoughtsService {
   async findByProject(userId: string, projectId: string) {
     // Ownership isolation is enforced by RLS — only rows owned by the current
     // user are visible; assertOwnership removed (redundant on this read path).
-    return this.db.db
-      .select()
-      .from(thoughts)
-      .where(eq(thoughts.projectId, projectId));
+    return this.db.asUser(userId, async (tx) =>
+      tx
+        .select()
+        .from(thoughts)
+        .where(eq(thoughts.projectId, projectId)),
+    );
   }
 
   async findOne(userId: string, id: string) {
-    const [thought] = await this.db.db
-      .select()
-      .from(thoughts)
-      .where(eq(thoughts.id, id))
-      .limit(1);
+    const thought = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(thoughts)
+        .where(eq(thoughts.id, id))
+        .limit(1);
+      return row;
+    });
 
     if (!thought) {
       throw new NotFoundException(`Thought ${id} not found`);
@@ -136,20 +146,25 @@ export class ThoughtsService {
   }
 
   async setColor(userId: string, id: string, color: string, source: 'user' | 'mcp' = 'user') {
-    const [thought] = await this.db.db
-      .select()
-      .from(thoughts)
-      .where(eq(thoughts.id, id))
-      .limit(1);
+    const thought = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(thoughts)
+        .where(eq(thoughts.id, id))
+        .limit(1);
+      return row;
+    });
 
     if (!thought) throw new NotFoundException(`Thought ${id} not found`);
     // RLS using clause makes unauthorized rows invisible; assertOwnership removed.
 
-    const [updated] = await this.db.db
-      .update(thoughts)
-      .set({ color })
-      .where(eq(thoughts.id, id))
-      .returning();
+    const [updated] = await this.db.asUser(userId, async (tx) =>
+      tx
+        .update(thoughts)
+        .set({ color })
+        .where(eq(thoughts.id, id))
+        .returning(),
+    );
 
     this.workspaceEvents.publish(userId, {
       eventId: crypto.randomUUID(),
@@ -164,20 +179,25 @@ export class ThoughtsService {
   }
 
   async clearColor(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
-    const [thought] = await this.db.db
-      .select()
-      .from(thoughts)
-      .where(eq(thoughts.id, id))
-      .limit(1);
+    const thought = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(thoughts)
+        .where(eq(thoughts.id, id))
+        .limit(1);
+      return row;
+    });
 
     if (!thought) throw new NotFoundException(`Thought ${id} not found`);
     // RLS using clause makes unauthorized rows invisible; assertOwnership removed.
 
-    const [updated] = await this.db.db
-      .update(thoughts)
-      .set({ color: null })
-      .where(eq(thoughts.id, id))
-      .returning();
+    const [updated] = await this.db.asUser(userId, async (tx) =>
+      tx
+        .update(thoughts)
+        .set({ color: null })
+        .where(eq(thoughts.id, id))
+        .returning(),
+    );
 
     this.workspaceEvents.publish(userId, {
       eventId: crypto.randomUUID(),
@@ -192,11 +212,14 @@ export class ThoughtsService {
   }
 
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
-    const [thought] = await this.db.db
-      .select()
-      .from(thoughts)
-      .where(eq(thoughts.id, id))
-      .limit(1);
+    const thought = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(thoughts)
+        .where(eq(thoughts.id, id))
+        .limit(1);
+      return row;
+    });
 
     if (!thought) {
       throw new NotFoundException(`Thought ${id} not found`);
@@ -204,7 +227,9 @@ export class ThoughtsService {
 
     // RLS using clause makes unauthorized rows invisible; assertOwnership removed.
 
-    await this.db.db.delete(entities).where(eq(entities.id, id));
+    await this.db.asUser(userId, async (tx) =>
+      tx.delete(entities).where(eq(entities.id, id)),
+    );
 
     this.workspaceEvents.publish(userId, {
       eventId: crypto.randomUUID(),

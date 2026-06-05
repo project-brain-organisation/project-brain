@@ -22,96 +22,101 @@ export class RelationshipsService {
   async create(userId: string, dto: CreateRelationshipDto, source: 'user' | 'mcp' = 'user') {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
-    // Load source entity
-    const [sourceEntity] = await this.db.db
-      .select()
-      .from(entities)
-      .where(eq(entities.id, dto.sourceId))
-      .limit(1);
+    return this.db.asUser(userId, async (tx) => {
+      // Load source entity
+      const [sourceEntity] = await tx
+        .select()
+        .from(entities)
+        .where(eq(entities.id, dto.sourceId))
+        .limit(1);
 
-    if (!sourceEntity) {
-      throw new NotFoundException(`Entity ${dto.sourceId} not found`);
-    }
-
-    // Load target entity
-    const [targetEntity] = await this.db.db
-      .select()
-      .from(entities)
-      .where(eq(entities.id, dto.targetId))
-      .limit(1);
-
-    if (!targetEntity) {
-      throw new NotFoundException(`Entity ${dto.targetId} not found`);
-    }
-
-    // Cross-project invariant
-    if (sourceEntity.projectId !== dto.projectId || targetEntity.projectId !== dto.projectId) {
-      throw new BadRequestException('Cross-project relationships are not allowed');
-    }
-
-    // Per-kind endpoint-type validation
-    if (dto.kind === 'hierarchy') {
-      if (sourceEntity.type !== 'thought' || targetEntity.type !== 'thought') {
-        throw new BadRequestException('hierarchy relationships require thought/thought endpoints');
+      if (!sourceEntity) {
+        throw new NotFoundException(`Entity ${dto.sourceId} not found`);
       }
-    } else if (dto.kind === 'tag') {
-      if (sourceEntity.type !== 'thought' || targetEntity.type !== 'label') {
-        throw new BadRequestException('tag relationships require thought→label');
-      }
-    }
-    // edge: no type restriction
 
-    try {
-      const [relationship] = await this.db.db
-        .insert(relationships)
-        .values({
+      // Load target entity
+      const [targetEntity] = await tx
+        .select()
+        .from(entities)
+        .where(eq(entities.id, dto.targetId))
+        .limit(1);
+
+      if (!targetEntity) {
+        throw new NotFoundException(`Entity ${dto.targetId} not found`);
+      }
+
+      // Cross-project invariant
+      if (sourceEntity.projectId !== dto.projectId || targetEntity.projectId !== dto.projectId) {
+        throw new BadRequestException('Cross-project relationships are not allowed');
+      }
+
+      // Per-kind endpoint-type validation
+      if (dto.kind === 'hierarchy') {
+        if (sourceEntity.type !== 'thought' || targetEntity.type !== 'thought') {
+          throw new BadRequestException('hierarchy relationships require thought/thought endpoints');
+        }
+      } else if (dto.kind === 'tag') {
+        if (sourceEntity.type !== 'thought' || targetEntity.type !== 'label') {
+          throw new BadRequestException('tag relationships require thought→label');
+        }
+      }
+      // edge: no type restriction
+
+      try {
+        const [relationship] = await tx
+          .insert(relationships)
+          .values({
+            projectId: dto.projectId,
+            ownerId: userId,
+            sourceId: dto.sourceId,
+            targetId: dto.targetId,
+            kind: dto.kind,
+            labelId: dto.labelId ?? null,
+          })
+          .returning();
+
+        this.workspaceEvents.publish(userId, {
+          eventId: crypto.randomUUID(),
+          type: 'relationship.created',
+          source,
+          resourceId: relationship.id,
           projectId: dto.projectId,
-          ownerId: userId,
-          sourceId: dto.sourceId,
-          targetId: dto.targetId,
-          kind: dto.kind,
-          labelId: dto.labelId ?? null,
-        })
-        .returning();
+          timestamp: new Date().toISOString(),
+        });
 
-      this.workspaceEvents.publish(userId, {
-        eventId: crypto.randomUUID(),
-        type: 'relationship.created',
-        source,
-        resourceId: relationship.id,
-        projectId: dto.projectId,
-        timestamp: new Date().toISOString(),
-      });
-
-      return relationship;
-    } catch (err) {
-      if ((err as Record<string, unknown>)?.code === '23505') {
-        throw new ConflictException('Relationship already exists');
+        return relationship;
+      } catch (err) {
+        if ((err as Record<string, unknown>)?.code === '23505') {
+          throw new ConflictException('Relationship already exists');
+        }
+        throw err;
       }
-      throw err;
-    }
+    });
   }
 
   async findByProject(userId: string, projectId: string, kind?: 'hierarchy' | 'tag' | 'edge') {
     // Ownership isolation enforced by RLS; assertOwnership removed on read path.
-    const query = this.db.db
-      .select()
-      .from(relationships)
-      .where(
-        kind
-          ? and(eq(relationships.projectId, projectId), eq(relationships.kind, kind))
-          : eq(relationships.projectId, projectId),
-      );
-
-    return query;
+    return this.db.asUser(userId, async (tx) =>
+      tx
+        .select()
+        .from(relationships)
+        .where(
+          kind
+            ? and(eq(relationships.projectId, projectId), eq(relationships.kind, kind))
+            : eq(relationships.projectId, projectId),
+        ),
+    );
   }
 
   async findOne(userId: string, id: string) {
-    const [relationship] = await this.db.db
-      .select()
-      .from(relationships)
-      .where(eq(relationships.id, id))
-      .limit(1);
+    const relationship = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(relationships)
+        .where(eq(relationships.id, id))
+        .limit(1);
+      return row;
+    });
 
     if (!relationship) {
       throw new NotFoundException(`Relationship ${id} not found`);
@@ -123,42 +128,46 @@ export class RelationshipsService {
   }
 
   async findDescendants(userId: string, thoughtId: string) {
-    // Load entity to get projectId for ownership check
-    const [entity] = await this.db.db
-      .select()
-      .from(entities)
-      .where(eq(entities.id, thoughtId))
-      .limit(1);
+    return this.db.asUser(userId, async (tx) => {
+      // Load entity to get projectId for ownership check
+      const [entity] = await tx
+        .select()
+        .from(entities)
+        .where(eq(entities.id, thoughtId))
+        .limit(1);
 
-    if (!entity) {
-      throw new NotFoundException(`Entity ${thoughtId} not found`);
-    }
+      if (!entity) {
+        throw new NotFoundException(`Entity ${thoughtId} not found`);
+      }
 
-    // Ownership isolation enforced by RLS; assertOwnership removed on read path.
+      // Ownership isolation enforced by RLS; assertOwnership removed on read path.
 
-    // Recursive CTE: source=child, target=parent
-    // "descendants of X" = rows where target=X, then recurse
-    const result = await this.db.db.execute(sql`
-      WITH RECURSIVE descendants AS (
-        SELECT source_id, target_id, 0 AS depth
-        FROM relationships
-        WHERE target_id = ${thoughtId} AND kind = 'hierarchy'
-        UNION ALL
-        SELECT r.source_id, r.target_id, d.depth + 1
-        FROM relationships r
-        INNER JOIN descendants d ON r.target_id = d.source_id
-        WHERE r.kind = 'hierarchy'
-      )
-      SELECT * FROM descendants ORDER BY depth
-    `);
+      // Recursive CTE: source=child, target=parent
+      // "descendants of X" = rows where target=X, then recurse
+      const result = await tx.execute(sql`
+        WITH RECURSIVE descendants AS (
+          SELECT source_id, target_id, 0 AS depth
+          FROM relationships
+          WHERE target_id = ${thoughtId} AND kind = 'hierarchy'
+          UNION ALL
+          SELECT r.source_id, r.target_id, d.depth + 1
+          FROM relationships r
+          INNER JOIN descendants d ON r.target_id = d.source_id
+          WHERE r.kind = 'hierarchy'
+        )
+        SELECT * FROM descendants ORDER BY depth
+      `);
 
-    return result.rows;
+      return result.rows;
+    });
   }
 
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
     const relationship = await this.findOne(userId, id);
 
-    await this.db.db.delete(relationships).where(eq(relationships.id, id));
+    await this.db.asUser(userId, async (tx) =>
+      tx.delete(relationships).where(eq(relationships.id, id)),
+    );
 
     this.workspaceEvents.publish(userId, {
       eventId: crypto.randomUUID(),

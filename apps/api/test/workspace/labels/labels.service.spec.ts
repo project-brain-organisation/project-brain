@@ -21,7 +21,7 @@ import type { DatabaseService } from '../../../src/database/database.service';
 import type { ProjectsService } from '../../../src/projects/projects.service';
 import type { WorkspaceEventsService } from '../../../src/workspace/gateway/workspace-events.service';
 
-// ── Fluent Drizzle mock helpers ────────────────────────────────────
+// ── Fluent Drizzle tx mock helpers ─────────────────────────────────
 
 function makeSelectChain(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
@@ -33,8 +33,9 @@ function makeSelectChain(rows: unknown[]) {
 }
 
 /**
- * Build a DatabaseService mock with a transaction() that captures labels insert values.
- * Identifies labels table by checking for 'name' column key (labels has it, entities does not).
+ * Build a DatabaseService mock with an asUser() that routes callbacks through
+ * a tx double. Identifies labels table by checking for 'name' column key
+ * (labels has it, entities does not).
  */
 function makeTxMock(opts: {
   throwOnInsert?: boolean;
@@ -75,24 +76,18 @@ function makeTxMock(opts: {
         hasNameCol ? [defaultLabelRow] : [{ id: 'label-uuid', projectId: 'proj-uuid' }],
       );
     }),
-    delete: jest.fn().mockReturnValue({
-      where: jest.fn().mockResolvedValue([]),
-    }),
-  };
-
-  const drizzle = {
     select: jest.fn().mockReturnValue(makeSelectChain([])),
-    insert: jest.fn(),
     delete: jest.fn().mockReturnValue({
       where: jest.fn().mockResolvedValue([]),
     }),
-    transaction: jest.fn().mockImplementation(
-      async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
-    ),
   };
 
-  const dbService = { db: drizzle } as unknown as DatabaseService;
-  return { dbService, drizzle, tx, txInsertCalls, getLabelInsertValues: () => capturedLabelInsertValues };
+  const asUser = jest.fn(
+    (_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
+  );
+
+  const dbService = { asUser } as unknown as DatabaseService;
+  return { dbService, asUser, tx, txInsertCalls, getLabelInsertValues: () => capturedLabelInsertValues };
 }
 
 function makeProjectsServiceMock(opts: { throwOnAssert?: boolean } = {}) {
@@ -107,7 +102,8 @@ function makeWorkspaceEventsService(): WorkspaceEventsService {
 }
 
 /**
- * Build a mock drizzle where select() returns a labels row for by-id methods.
+ * Build a mock DatabaseService where asUser() returns a tx that has
+ * a select() returning a labels row for by-id methods.
  * Tracks which table's 'from' was called first to detect entities vs labels first-query.
  */
 function makeDbWithLabelRow(labelRow: Record<string, unknown>, opts: { missing?: boolean } = {}) {
@@ -128,7 +124,7 @@ function makeDbWithLabelRow(labelRow: Record<string, unknown>, opts: { missing?:
 
   const rows = opts.missing ? [] : [labelRow];
 
-  const drizzle = {
+  const tx = {
     select: jest.fn().mockImplementation(() => makeQueryChain(rows)),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
@@ -140,10 +136,18 @@ function makeDbWithLabelRow(labelRow: Record<string, unknown>, opts: { missing?:
     delete: jest.fn().mockReturnValue({
       where: jest.fn().mockResolvedValue([]),
     }),
-    transaction: jest.fn(),
   };
 
-  return { drizzle, dbService: { db: drizzle } as unknown as DatabaseService, fromCalls };
+  const asUser = jest.fn(
+    (_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
+  );
+
+  return {
+    tx,
+    asUser,
+    dbService: { asUser } as unknown as DatabaseService,
+    fromCalls,
+  };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────
@@ -167,7 +171,7 @@ describe('LabelsService', () => {
       expect((labelVals as Record<string, unknown>)['projectId']).toBe('proj-uuid');
     });
 
-    it('B2: calls assertOwnership before any DB transaction on create()', async () => {
+    it('B2: calls assertOwnership before any DB asUser call on create()', async () => {
       const callOrder: string[] = [];
 
       const assertOwnership = jest.fn().mockImplementation(async () => {
@@ -189,34 +193,29 @@ describe('LabelsService', () => {
         }),
       };
 
-      const drizzle = {
-        transaction: jest.fn().mockImplementation(
-          async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
-        ),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => {
+        callOrder.push('asUser');
+        return cb(tx);
+      });
+      const dbService = { asUser } as unknown as DatabaseService;
       const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());
 
       await service.create('user-1', { projectId: 'proj-uuid', name: 'My Label' });
 
       const assertIdx = callOrder.indexOf('assertOwnership');
-      const firstInsertIdx = callOrder.findIndex((e) => e.startsWith('tx.insert'));
+      const asUserIdx = callOrder.indexOf('asUser');
       expect(assertIdx).toBeGreaterThanOrEqual(0);
-      expect(assertIdx).toBeLessThan(firstInsertIdx);
+      expect(assertIdx).toBeLessThan(asUserIdx);
     });
 
-    it('B1c: propagates transaction failure — rolls back both inserts atomically', async () => {
+    it('B1c: propagates asUser failure — rolls back both inserts atomically', async () => {
       const tx = {
         insert: jest.fn().mockImplementation(() => {
           throw new Error('DB constraint violation');
         }),
       };
-      const drizzle = {
-        transaction: jest.fn().mockImplementation(
-          async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
-        ),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsServiceMock();
       const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());
 
@@ -234,10 +233,9 @@ describe('LabelsService', () => {
       selectChain.innerJoin = jest.fn().mockReturnValue(selectChain);
       selectChain.where = jest.fn().mockResolvedValue([]);
 
-      const drizzle = {
-        select: jest.fn().mockReturnValue(selectChain),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const tx = { select: jest.fn().mockReturnValue(selectChain) };
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
       const projectsService = makeProjectsServiceMock();
       const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());
 
@@ -252,7 +250,7 @@ describe('LabelsService', () => {
   describe('findOne()', () => {
     it('B3: queries labels table first (not entities) for scope resolution', async () => {
       const labelRow = { id: 'lbl-1', projectId: 'proj-uuid', name: 'Tag', color: '#000', isEdge: false };
-      const { drizzle, dbService, fromCalls } = makeDbWithLabelRow(labelRow);
+      const { dbService, fromCalls } = makeDbWithLabelRow(labelRow);
       const projectsService = makeProjectsServiceMock();
       const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());
 
@@ -293,7 +291,7 @@ describe('LabelsService', () => {
   describe('remove()', () => {
     it('B3: queries labels table first for scope; still deletes from entities (cascade)', async () => {
       const labelRow = { id: 'lbl-1', projectId: 'proj-xyz', name: 'Tag', color: '#000', isEdge: false };
-      const { drizzle, dbService, fromCalls } = makeDbWithLabelRow(labelRow);
+      const { tx, dbService, fromCalls } = makeDbWithLabelRow(labelRow);
       const projectsService = makeProjectsServiceMock();
       const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());
 
@@ -302,7 +300,7 @@ describe('LabelsService', () => {
       // First from() call must be labels
       expect(fromCalls[0]).toBe('labels');
       // delete is called (cascade via entities)
-      expect(drizzle.delete).toHaveBeenCalled();
+      expect(tx.delete).toHaveBeenCalled();
       expect(result).toEqual({ deleted: true });
     });
   });

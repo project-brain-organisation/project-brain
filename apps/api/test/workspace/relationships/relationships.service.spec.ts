@@ -20,7 +20,7 @@ import type { DatabaseService } from '../../../src/database/database.service';
 import type { ProjectsService } from '../../../src/projects/projects.service';
 import type { WorkspaceEventsService } from '../../../src/workspace/gateway/workspace-events.service';
 
-// ── Fluent Drizzle mock helpers ────────────────────────────────────
+// ── Fluent Drizzle tx mock helpers ─────────────────────────────────
 
 function makeSelectChain(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
@@ -47,8 +47,9 @@ function makeDeleteChain() {
 }
 
 /**
- * Build a DatabaseService mock. selectResponses is a list of row arrays
- * returned in order for successive select() calls.
+ * Build a DatabaseService mock where asUser() routes callbacks through a tx double.
+ * selectResponses is a list of row arrays returned in order for successive select() calls.
+ * The tx also exposes insert/delete/execute for relationship operations.
  */
 function makeDbService(opts: {
   selectResponses?: unknown[][];
@@ -58,7 +59,7 @@ function makeDbService(opts: {
   const { selectResponses = [], insertRows = [{ id: 'rel-uuid' }], insertError } = opts;
   let selectCallIndex = 0;
 
-  const drizzle = {
+  const tx = {
     select: jest.fn().mockImplementation(() => {
       const rows = selectResponses[selectCallIndex] ?? [];
       selectCallIndex++;
@@ -69,7 +70,11 @@ function makeDbService(opts: {
     execute: jest.fn().mockResolvedValue({ rows: [] }),
   };
 
-  return { db: drizzle } as unknown as DatabaseService;
+  const asUser = jest.fn(
+    (_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
+  );
+
+  return { asUser } as unknown as DatabaseService;
 }
 
 function makeProjectsService(assertImpl?: () => Promise<void>): ProjectsService {
@@ -236,7 +241,7 @@ describe('RelationshipsService', () => {
   // ── B5: assertOwnership ordering ──────────────────────────────
 
   describe('B5 — assertOwnership called before DB access', () => {
-    it('calls assertOwnership before any DB select on create()', async () => {
+    it('calls assertOwnership before any DB asUser call on create()', async () => {
       const callOrder: string[] = [];
 
       const projectsService = {
@@ -246,7 +251,7 @@ describe('RelationshipsService', () => {
       } as unknown as ProjectsService;
 
       let selectCallCount = 0;
-      const drizzle = {
+      const tx = {
         select: jest.fn().mockImplementation(() => {
           callOrder.push(`select:${selectCallCount++}`);
           const rows = selectCallCount === 1 ? [thoughtInProj1] : [thoughtInProj1b];
@@ -256,7 +261,14 @@ describe('RelationshipsService', () => {
         delete: jest.fn().mockReturnValue(makeDeleteChain()),
         execute: jest.fn().mockResolvedValue({ rows: [] }),
       };
-      const db = { db: drizzle } as unknown as DatabaseService;
+
+      const asUser = jest.fn(
+        (_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => {
+          callOrder.push('asUser');
+          return cb(tx);
+        },
+      );
+      const db = { asUser } as unknown as DatabaseService;
       const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
 
       await service.create('user-1', {
@@ -267,7 +279,7 @@ describe('RelationshipsService', () => {
       });
 
       expect(callOrder[0]).toBe('assertOwnership');
-      expect(callOrder.some((e) => e.startsWith('select'))).toBe(true);
+      expect(callOrder.some((e) => e === 'asUser')).toBe(true);
     });
   });
 });
