@@ -4,7 +4,8 @@
  * Verifies:
  * - Table names match expected DB identifiers
  * - id is PK+FK to entities.id (Table-per-Type pattern)
- * - Stripped columns (user_id, project_id, parent_id, colorId, is_root) are absent
+ * - Stripped columns (user_id, parent_id, colorId, is_root) are absent
+ * - project_id IS present on thoughts (denormalized, step 01-01); stripped from labels
  * - color is inline varchar(7) on both tables (no FK)
  * - Drizzle relations() tying each subtype id back to entities are declared
  *
@@ -26,10 +27,9 @@ describe('thoughts subtype schema', () => {
     expect(cols['color'].config.length).toBe(7);
   });
 
-  it('does not have user_id, project_id, parent_id, colorId, or is_root columns', () => {
+  it('does not have user_id, parent_id, colorId, or is_root columns', () => {
     const cols = thoughts[Symbol.for('drizzle:Columns')] as Record<string, any>;
     expect(cols).not.toHaveProperty('userId');
-    expect(cols).not.toHaveProperty('projectId');
     expect(cols).not.toHaveProperty('parentId');
     expect(cols).not.toHaveProperty('colorId');
     expect(cols).not.toHaveProperty('isRoot');

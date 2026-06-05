@@ -76,10 +76,10 @@ function makeTxMock(entityRow: unknown, thoughtRow: unknown) {
 
   const tx = {
     insert: jest.fn((table: Record<string, unknown>) => {
-      // Distinguish entities from thoughts by presence of 'projectId' column key
-      const isEntities = table && 'projectId' in table;
-      const tableName = isEntities ? 'entities' : 'thoughts';
-      const rows = isEntities ? [entityRow] : [thoughtRow];
+      // Distinguish entities from thoughts by Drizzle table name symbol.
+      // (Cannot use 'projectId' in table — thoughts now carries projectId too, step 01-01.)
+      const tableName = (table as any)[Symbol.for('drizzle:Name')] ?? 'unknown';
+      const rows = tableName === 'entities' ? [entityRow] : [thoughtRow];
       return makeTxInsertChain(tableName, rows);
     }),
   };
