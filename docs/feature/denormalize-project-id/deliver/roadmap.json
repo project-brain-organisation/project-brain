@@ -1,0 +1,127 @@
+{
+  "roadmap": {
+    "project_id": "denormalize-project-id",
+    "created_at": "2026-06-05T06:53:46Z",
+    "total_steps": 6
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Schema + migration: denormalize project_id onto subtype tables",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "Add immutable project_id column + index to thought.schema.ts",
+          "criteria": [
+            "thoughts table exports a projectId column ('project_id', uuid, notNull) referencing entities.id onDelete cascade",
+            "thoughts table declares a btree index 'idx_thoughts_project_id' on project_id",
+            "header comment reframes project_id as a denormalized immutable copy of the entity's project scope, dropping the old 'No project_id' note",
+            "column/index shape matches the reference pattern in chunk.schema.ts and relationship.schema.ts exactly",
+            "EXEMPT FROM PARADIGM: static schema metadata, not runtime behavior; backfill-correctness property compensates at step 01-03"
+          ],
+          "test_file": "apps/api/test/database/schema/thought.schema.spec.ts",
+          "scenario_name": "thoughts table exposes immutable denormalized project_id with idx_thoughts_project_id"
+        },
+        {
+          "id": "01-02",
+          "name": "Add immutable project_id column + index to label.schema.ts",
+          "criteria": [
+            "labels table exports a projectId column ('project_id', uuid, notNull) referencing entities.id onDelete cascade",
+            "labels table declares a btree index 'idx_labels_project_id' on project_id",
+            "header comment reframes project_id as a denormalized immutable copy of the entity's project scope, dropping the old 'No project_id' note",
+            "column/index shape matches the reference pattern in chunk.schema.ts and relationship.schema.ts exactly",
+            "EXEMPT FROM PARADIGM: static schema metadata, not runtime behavior; backfill-correctness property compensates at step 01-03"
+          ],
+          "test_file": "apps/api/test/database/schema/label.schema.spec.ts",
+          "scenario_name": "labels table exposes immutable denormalized project_id with idx_labels_project_id"
+        },
+        {
+          "id": "01-03",
+          "name": "SQL migration: add nullable project_id, backfill, then constrain + index",
+          "criteria": [
+            "new migration under apps/api/drizzle/migrations adds nullable project_id (uuid) to both thoughts and labels",
+            "migration backfills project_id from entities.project_id by joining each subtype row on subtype.id = entities.id, before any NOT NULL is applied",
+            "after backfill it sets project_id NOT NULL, adds FKs to entities.id onDelete cascade, and creates idx_thoughts_project_id and idx_labels_project_id",
+            "statement order is ADD nullable, UPDATE backfill, SET NOT NULL, ADD FK, CREATE INDEX, so pre-existing rows never violate NOT NULL",
+            "EXEMPT FROM PARADIGM: exact golden DDL; compensating fast-check property asserts every backfilled subtype.project_id equals its entity.project_id over generated fixtures"
+          ],
+          "test_file": "apps/api/test/database/migrations/denormalize-project-id-backfill.spec.ts",
+          "scenario_name": "Property: backfilled subtype project_id equals owning entity project_id for every row"
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Service refactors: stamp project_id on write, filter it on read, collapse entity pre-lookups",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "Refactor thoughts.service.ts to use denormalized project_id",
+          "criteria": [
+            "create() stamps projectId = dto.projectId onto the thoughts insert within the same transaction as the entity insert",
+            "findByProject() filters eq(thoughts.projectId, projectId) and no longer innerJoins entities for scope",
+            "by-id methods (updateBody, findOne, setColor, clearColor, remove) resolve scope from the thought row's project_id, collapsing the entity-then-subtype N+1",
+            "assertOwnership still runs with the row's project_id before any mutation/read; NotFoundException still thrown for missing ids; remove() still deletes entities via cascade",
+            "unit tests are fast-check property-based with state-delta invariants (strict=true): create() yields project_id = supplied projectId; findByProject() returns only matching rows; single-example Jest only as // bypass: fallback"
+          ],
+          "test_file": "apps/api/test/workspace/thoughts/thoughts.service.spec.ts",
+          "scenario_name": "Property: thoughts service stamps and filters project_id without joining entities for scope"
+        },
+        {
+          "id": "02-02",
+          "name": "Refactor labels.service.ts to use denormalized project_id",
+          "criteria": [
+            "create() stamps projectId = dto.projectId onto the labels insert within the same transaction as the entity insert",
+            "findByProject() filters eq(labels.projectId, projectId) and no longer innerJoins entities for scope",
+            "by-id methods (findOne, update, remove) resolve scope from the label row's project_id, collapsing the entity-then-subtype lookup",
+            "assertOwnership still runs with the row's project_id; NotFoundException still thrown for missing ids; remove() still deletes entities via cascade; service scope otherwise unchanged",
+            "unit tests are fast-check property-based with state-delta invariants (strict=true): create() yields project_id = supplied projectId; findByProject() returns only matching rows; single-example Jest only as // bypass: fallback"
+          ],
+          "test_file": "apps/api/test/workspace/labels/labels.service.spec.ts",
+          "scenario_name": "Property: labels service stamps and filters project_id without joining entities for scope"
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Verify cross-table project scoping consistency",
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Verify uniform project_id scoping with no entities scope-join",
+          "criteria": [
+            "all four scoped tables (thoughts, labels, relationships, chunks) expose a notNull project_id with a btree index, confirmed against their schema definitions",
+            "no read path in thoughts/labels/relationships/pipeline services innerJoins entities solely to resolve scope; entities is touched only for lifecycle or endpoint resolution",
+            "a full-project-graph read filters each table on its own project_id, yielding the same project_id across thoughts, labels, relationships, and chunks for a project",
+            "for every subtype row project_id equals its entity's project_id (re-asserts the 01-03 invariant on post-refactor reads); no method UPDATEs project_id, so it cannot diverge",
+            "contract test is fast-check property-based over generated multi-table fixtures: asserts cross-table uniformity and the no-scope-join invariant, unchanged() covering other slots, strict=true"
+          ],
+          "test_file": "apps/api/test/workspace/project-scoping-consistency.spec.ts",
+          "scenario_name": "Property: project_id is uniform and immutable across all scoped tables with no entities scope-join"
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "apps/api/src/database/schema/",
+      "apps/api/src/workspace/thoughts/",
+      "apps/api/src/workspace/labels/",
+      "apps/api/drizzle/migrations/"
+    ],
+    "test_directories": [
+      "apps/api/test/database/",
+      "apps/api/test/workspace/"
+    ],
+    "excluded_patterns": [
+      "**/dist/**",
+      "**/node_modules/**"
+    ]
+  },
+  "validation": {
+    "status": "approved",
+    "reviewer": "nw-acceptance-designer-reviewer",
+    "approved_at": "2026-06-05T14:32:00Z",
+    "notes": "All six steps follow NN-NN format, criteria are testable and concrete. Phase decomposition is sound: Phase 01 (schema + safe migration ordering), Phase 02 (service stamping/filtering), Phase 03 (cross-table verification). No circular dependencies. Migration safety verified: ADD nullable -> UPDATE backfill -> SET NOT NULL -> ADD FK -> CREATE INDEX prevents NOT NULL violations. Service refactors correctly specify stamping, filtering, and scope-join collapse. Non-blocking: clarify bypass:fallback note in 02-01/02 and add rationale to 03-01 re-assertion."
+  }
+}
