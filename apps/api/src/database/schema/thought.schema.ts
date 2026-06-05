@@ -10,6 +10,15 @@
  * carried directly on the row for efficient project-scoped queries without joins.
  * It mirrors the pattern used by chunk.schema.ts and relationship.schema.ts.
  *
+ * FK SEMANTIC RESTRICTION: project_id references entities.id at the database level,
+ * which technically allows any entity type as a value. Semantically, project_id MUST
+ * refer to a project-type entity only. This is enforced at the application layer via
+ * ProjectsService.assertOwnership(), which queries project_meta (a project-type-only
+ * table) and throws ForbiddenException if the provided projectId is not a valid
+ * project. A CHECK constraint with a correlated subquery was considered but deferred
+ * due to performance implications and consistency with the existing application-layer
+ * enforcement pattern used throughout this codebase.
+ *
  * Stripped vs legacy schema.ts:
  *   - No user_id (ownership flows through entities → project_meta → owner)
  *   - No parent_id (hierarchy lives in the relationships table, step 01-03)
