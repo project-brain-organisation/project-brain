@@ -211,7 +211,6 @@ describe('AC4: property simulation — subtype.projectId equals entity.projectId
   function assertSubtypeProjectIdMatchesEntity(
     entity: Entity,
     subtype: Subtype,
-    label: string,
   ): void {
     expect(subtype.projectId).toBe(entity.projectId);
   }
@@ -255,7 +254,7 @@ describe('AC4: property simulation — subtype.projectId equals entity.projectId
   it.each(fixtureMatrix)(
     'subtype "$subtypeKind": subtype.projectId === entity.projectId',
     ({ subtypeKind, entity, subtype }) => {
-      assertSubtypeProjectIdMatchesEntity(entity, subtype, subtypeKind);
+      assertSubtypeProjectIdMatchesEntity(entity, subtype);
     },
   );
 

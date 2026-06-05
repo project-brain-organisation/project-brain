@@ -24,7 +24,7 @@ export class ThoughtsService {
     const thought = await this.db.db.transaction(async (tx) => {
       const id = crypto.randomUUID();
 
-      const [entity] = await tx
+      await tx
         .insert(entities)
         .values({ id, projectId: dto.projectId, type: 'thought' })
         .returning();
@@ -32,7 +32,7 @@ export class ThoughtsService {
       const [row] = await tx
         .insert(thoughts)
         .values({
-          id: entity.id,
+          id,
           projectId: dto.projectId,
           body: dto.body,
           title: dto.title ?? '',
