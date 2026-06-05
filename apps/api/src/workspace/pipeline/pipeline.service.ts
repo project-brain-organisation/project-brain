@@ -1,18 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
-import { ProjectsService } from '../../projects/projects.service';
 import { chunks } from '../../database/schema/index';
 import { ChunkingService } from './chunking.service';
 import { EmbeddingService } from './embedding.service';
 
 /**
  * PipelineService — chunk → persist (project-scoped) → embed → update vectors,
- * plus project-scoped, ownership-gated semantic search.
+ * plus project-scoped semantic search.
  *
  * Persistence is scoped by project_id (entities.id of the owning project).
  * All DB writes run inside DatabaseService.asUser(ownerId) so that RLS
  * policies see the correct app.current_user_id for the transaction.
+ *
+ * Ownership isolation for semanticSearch is now enforced entirely by RLS on
+ * the chunks table — assertOwnership removed (step 04-01).
  */
 @Injectable()
 export class PipelineService {
@@ -22,7 +24,6 @@ export class PipelineService {
     private readonly db: DatabaseService,
     private readonly embeddingService: EmbeddingService,
     private readonly chunkingService: ChunkingService,
-    private readonly projectsService: ProjectsService,
   ) {}
 
   /**
@@ -93,9 +94,10 @@ export class PipelineService {
    * Project-scoped, ownership-gated semantic search. Ownership is asserted
    * BEFORE any DB access; similarity is filtered by c.project_id (never user_id).
    */
-  async semanticSearch(userId: string, projectId: string, query: string, n: number = 5) {
-    await this.projectsService.assertOwnership(userId, projectId);
-
+  async semanticSearch(_userId: string, projectId: string, query: string, n: number = 5) {
+    // Ownership isolation enforced by RLS on chunks table; assertOwnership removed.
+    // RLS scopes the similarity query to the current user's rows automatically.
+    // _userId retained in signature for API compatibility (callers already pass it).
     const clampedN = Math.min(Math.max(n, 1), 20);
     const [queryVector] = await this.embeddingService.embed([query]);
 

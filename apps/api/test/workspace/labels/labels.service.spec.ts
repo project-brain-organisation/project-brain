@@ -272,7 +272,9 @@ describe('LabelsService', () => {
   });
 
   describe('update()', () => {
-    it('B3: queries labels table first (not entities) and uses label.projectId for ownership', async () => {
+    // Step 04-01: assertOwnership removed from update path (RLS using clause enforces
+    // isolation). Test now verifies labels-first query and successful update only.
+    it('B3: queries labels table first (not entities) and applies the update', async () => {
       const labelRow = { id: 'lbl-1', projectId: 'proj-xyz', name: 'Tag', color: '#000', isEdge: false };
       const { dbService, fromCalls } = makeDbWithLabelRow(labelRow);
       const projectsService = makeProjectsServiceMock();
@@ -283,8 +285,8 @@ describe('LabelsService', () => {
 
       // First from() call must be labels
       expect(fromCalls[0]).toBe('labels');
-      // assertOwnership called with label's projectId
-      expect(projectsService.assertOwnership).toHaveBeenCalledWith('user-1', 'proj-xyz');
+      // assertOwnership must NOT be called on the update path (removed — RLS covers this)
+      expect(projectsService.assertOwnership).not.toHaveBeenCalled();
     });
   });
 

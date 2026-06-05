@@ -76,7 +76,9 @@ export class ThoughtsService {
       throw new NotFoundException(`Thought ${id} not found`);
     }
 
-    await this.projectsService.assertOwnership(userId, thought.projectId);
+    // Ownership isolation is enforced by RLS (using clause on thoughts table).
+    // assertOwnership removed — RLS makes unauthorized rows invisible, so
+    // the NotFoundException above fires for both missing and unauthorized rows.
 
     const [updated] = await this.db.db
       .update(thoughts)
@@ -108,8 +110,8 @@ export class ThoughtsService {
   }
 
   async findByProject(userId: string, projectId: string) {
-    await this.projectsService.assertOwnership(userId, projectId);
-
+    // Ownership isolation is enforced by RLS — only rows owned by the current
+    // user are visible; assertOwnership removed (redundant on this read path).
     return this.db.db
       .select()
       .from(thoughts)
@@ -127,7 +129,8 @@ export class ThoughtsService {
       throw new NotFoundException(`Thought ${id} not found`);
     }
 
-    await this.projectsService.assertOwnership(userId, thought.projectId);
+    // Ownership isolation is enforced by RLS — unauthorized rows are not visible,
+    // so NotFoundException above covers both missing and cross-tenant access.
 
     return thought;
   }
@@ -140,7 +143,7 @@ export class ThoughtsService {
       .limit(1);
 
     if (!thought) throw new NotFoundException(`Thought ${id} not found`);
-    await this.projectsService.assertOwnership(userId, thought.projectId);
+    // RLS using clause makes unauthorized rows invisible; assertOwnership removed.
 
     const [updated] = await this.db.db
       .update(thoughts)
@@ -168,7 +171,7 @@ export class ThoughtsService {
       .limit(1);
 
     if (!thought) throw new NotFoundException(`Thought ${id} not found`);
-    await this.projectsService.assertOwnership(userId, thought.projectId);
+    // RLS using clause makes unauthorized rows invisible; assertOwnership removed.
 
     const [updated] = await this.db.db
       .update(thoughts)
@@ -199,7 +202,7 @@ export class ThoughtsService {
       throw new NotFoundException(`Thought ${id} not found`);
     }
 
-    await this.projectsService.assertOwnership(userId, thought.projectId);
+    // RLS using clause makes unauthorized rows invisible; assertOwnership removed.
 
     await this.db.db.delete(entities).where(eq(entities.id, id));
 

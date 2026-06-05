@@ -93,8 +93,7 @@ export class RelationshipsService {
   }
 
   async findByProject(userId: string, projectId: string, kind?: 'hierarchy' | 'tag' | 'edge') {
-    await this.projectsService.assertOwnership(userId, projectId);
-
+    // Ownership isolation enforced by RLS; assertOwnership removed on read path.
     const query = this.db.db
       .select()
       .from(relationships)
@@ -118,7 +117,7 @@ export class RelationshipsService {
       throw new NotFoundException(`Relationship ${id} not found`);
     }
 
-    await this.projectsService.assertOwnership(userId, relationship.projectId);
+    // Ownership isolation enforced by RLS; unauthorized rows invisible.
 
     return relationship;
   }
@@ -135,7 +134,7 @@ export class RelationshipsService {
       throw new NotFoundException(`Entity ${thoughtId} not found`);
     }
 
-    await this.projectsService.assertOwnership(userId, entity.projectId);
+    // Ownership isolation enforced by RLS; assertOwnership removed on read path.
 
     // Recursive CTE: source=child, target=parent
     // "descendants of X" = rows where target=X, then recurse

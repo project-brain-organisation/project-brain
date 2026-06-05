@@ -54,8 +54,7 @@ export class LabelsService {
   }
 
   async findByProject(userId: string, projectId: string) {
-    await this.projectsService.assertOwnership(userId, projectId);
-
+    // Ownership isolation enforced by RLS; assertOwnership removed on read path.
     return this.db.db
       .select()
       .from(labels)
@@ -73,7 +72,7 @@ export class LabelsService {
       throw new NotFoundException(`Label ${id} not found`);
     }
 
-    await this.projectsService.assertOwnership(userId, label.projectId);
+    // Ownership isolation enforced by RLS; unauthorized rows invisible.
 
     return label;
   }
@@ -86,7 +85,7 @@ export class LabelsService {
       .limit(1);
 
     if (!label) throw new NotFoundException(`Label ${id} not found`);
-    await this.projectsService.assertOwnership(userId, label.projectId);
+    // Ownership isolation enforced by RLS; assertOwnership removed on update path.
 
     const [updated] = await this.db.db
       .update(labels)
@@ -118,7 +117,7 @@ export class LabelsService {
       .limit(1);
 
     if (!label) throw new NotFoundException(`Label ${id} not found`);
-    await this.projectsService.assertOwnership(userId, label.projectId);
+    // Ownership isolation enforced by RLS; assertOwnership removed on delete path.
 
     await this.db.db.delete(entities).where(eq(entities.id, id));
 

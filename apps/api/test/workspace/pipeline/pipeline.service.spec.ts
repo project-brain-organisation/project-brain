@@ -5,26 +5,25 @@
  *
  * The pipeline driving port is PipelineService. Its driven ports are mocked at the
  * boundary: DatabaseService (persistence), EmbeddingService (HTTP embedding call),
- * ChunkingService (pure splitter — real, it is in-hexagon pure logic), and
- * ProjectsService (ownership gate).
+ * ChunkingService (pure splitter — real, it is in-hexagon pure logic).
  *
- * Test Budget: 3 distinct behaviors × 2 = 6 max unit tests
+ * Test Budget: 2 distinct behaviors × 2 = 4 max unit tests
  * Behaviors:
  *   B1: chunkAndEmbed persists chunks with project_id (and NO user_id) then updates vectors
- *   B2: semanticSearch is ownership-gated BEFORE any DB access
- *   B3: semanticSearch scopes the similarity query by the owning project_id
+ *   B2: semanticSearch scopes the similarity query by the owning project_id
+ *       (ownership isolation now via RLS — step 04-01 removed the assertOwnership gate)
  *
  * Note (step 02-02): DatabaseService double updated to include asUser() that
  * routes callbacks through the same drizzle tx double, satisfying the RLS wiring
  * added in step 02-02 without changing the behavioral assertions.
+ * Note (step 04-01): ProjectsService removed from PipelineService constructor;
+ * semanticSearch ownership-gate tests updated to reflect RLS enforcement.
  */
 
-import { ForbiddenException } from '@nestjs/common';
 import { PipelineService } from '../../../src/workspace/pipeline/pipeline.service';
 import { ChunkingService } from '../../../src/workspace/pipeline/chunking.service';
 import type { EmbeddingService } from '../../../src/workspace/pipeline/embedding.service';
 import type { DatabaseService } from '../../../src/database/database.service';
-import type { ProjectsService } from '../../../src/projects/projects.service';
 
 // ── Driven-port doubles ────────────────────────────────────────────
 
@@ -32,14 +31,6 @@ function makeEmbeddingService(vectors: number[][]): EmbeddingService {
   return {
     embed: jest.fn().mockResolvedValue(vectors),
   } as unknown as EmbeddingService;
-}
-
-function makeProjectsService(assertOwnershipImpl?: () => Promise<void>): ProjectsService {
-  return {
-    assertOwnership: jest
-      .fn()
-      .mockImplementation(assertOwnershipImpl ?? (() => Promise.resolve())),
-  } as unknown as ProjectsService;
 }
 
 /**
@@ -98,9 +89,8 @@ describe('WorkspacePipelineService', () => {
         const chunking = new ChunkingService();
         const expectedChunks = chunking.chunk(body);
         const embedding = makeEmbeddingService(expectedChunks.map(() => [0.1, 0.2]));
-        const projects = makeProjectsService();
 
-        const service = new PipelineService(dbService, embedding, chunking, projects);
+        const service = new PipelineService(dbService, embedding, chunking);
 
         await service.chunkAndEmbed(projectId, thoughtId, body, ownerId);
 
@@ -117,48 +107,27 @@ describe('WorkspacePipelineService', () => {
     );
   });
 
-  // ── B2 + B3: project-scoped, ownership-gated semantic search ─────
+  // ── B2: project-scoped semantic search (RLS enforces ownership — step 04-01) ─
 
   describe('semanticSearch', () => {
-    it('asserts ownership BEFORE touching the database', async () => {
-      const { dbService, drizzle } = makePersistenceDb();
-      const embedding = makeEmbeddingService([[0.5, 0.5]]);
-      const projects = makeProjectsService(() =>
-        Promise.reject(new ForbiddenException('Project not found or access denied')),
-      );
-      const service = new PipelineService(
-        dbService,
-        embedding,
-        new ChunkingService(),
-        projects,
-      );
+    // Step 04-01: assertOwnership removed from semanticSearch; RLS on chunks table
+    // scopes the similarity query to the current user's rows automatically.
+    // The test verifies the SQL still scopes by project_id (not user_id).
 
-      await expect(
-        service.semanticSearch('intruder', 'proj-1', 'query text'),
-      ).rejects.toThrow(ForbiddenException);
-
-      expect(projects.assertOwnership).toHaveBeenCalledWith('intruder', 'proj-1');
-      expect(drizzle.execute).not.toHaveBeenCalled();
-      expect(embedding.embed).not.toHaveBeenCalled();
-    });
-
-    it('scopes the similarity query by the owning project_id', async () => {
+    it('scopes the similarity query by the owning project_id (ownership via RLS)', async () => {
       const { dbService, drizzle } = makePersistenceDb();
       drizzle.execute.mockResolvedValue({
         rows: [{ chunkId: 'c1', thoughtId: 't1', body: 'match', score: 0.9 }],
       });
       const embedding = makeEmbeddingService([[0.5, 0.5]]);
-      const projects = makeProjectsService();
       const service = new PipelineService(
         dbService,
         embedding,
         new ChunkingService(),
-        projects,
       );
 
       const results = await service.semanticSearch('owner', 'proj-7', 'find me');
 
-      expect(projects.assertOwnership).toHaveBeenCalledWith('owner', 'proj-7');
       expect(drizzle.execute).toHaveBeenCalledTimes(1);
 
       // The parameterized SQL must scope by the owning project_id and must NOT

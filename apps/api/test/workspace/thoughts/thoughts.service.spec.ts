@@ -316,8 +316,8 @@ describe('WorkspaceThoughtsService', () => {
 
       // AC3: only one select call (from thoughts, not entities-then-thoughts N+1)
       expect(selectCallCount).toBe(1);
-      // AC4: assertOwnership called with the thought row's project_id
-      expect(projectsService.assertOwnership).toHaveBeenCalledWith('user-1', 'proj-1');
+      // Step 04-01: assertOwnership removed from setColor path (RLS enforces isolation).
+      expect(projectsService.assertOwnership).not.toHaveBeenCalled();
       expect(result).toMatchObject({ color: '#ff0000' });
     });
 

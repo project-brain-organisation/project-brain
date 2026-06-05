@@ -16,12 +16,13 @@
  *
  * FK SEMANTIC RESTRICTION: project_id references entities.id at the database level,
  * which technically allows any entity type as a value. Semantically, project_id MUST
- * refer to a project-type entity only. This is enforced at the application layer via
- * ProjectsService.assertOwnership(), which queries project_meta (a project-type-only
- * table) and throws ForbiddenException if the provided projectId is not a valid
- * project. A CHECK constraint with a correlated subquery was considered but deferred
- * due to performance implications and consistency with the existing application-layer
- * enforcement pattern used throughout this codebase.
+ * refer to a project-type entity only. This is the SOLE remaining app-layer
+ * ownership-adjacent check: ProjectsService.assertOwnership() is still called on
+ * create() paths to validate the project-type FK invariant (it queries project_meta,
+ * a project-type-only table, and throws ForbiddenException for non-project ids).
+ * Owner isolation for all read/update/delete paths is now enforced entirely by RLS
+ * (labels_owner_isolation policy above). A CHECK constraint with a correlated
+ * subquery was considered but deferred due to performance implications.
  *
  * Stripped vs legacy schema.ts:
  *   - No user_id (ownership flows through entities → project_meta → owner)
