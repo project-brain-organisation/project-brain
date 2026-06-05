@@ -23,39 +23,39 @@ export class RelationshipsService {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
     // Load source entity
-    const [source_entity] = await this.db.db
+    const [sourceEntity] = await this.db.db
       .select()
       .from(entities)
       .where(eq(entities.id, dto.sourceId))
       .limit(1);
 
-    if (!source_entity) {
+    if (!sourceEntity) {
       throw new NotFoundException(`Entity ${dto.sourceId} not found`);
     }
 
     // Load target entity
-    const [target_entity] = await this.db.db
+    const [targetEntity] = await this.db.db
       .select()
       .from(entities)
       .where(eq(entities.id, dto.targetId))
       .limit(1);
 
-    if (!target_entity) {
+    if (!targetEntity) {
       throw new NotFoundException(`Entity ${dto.targetId} not found`);
     }
 
     // Cross-project invariant
-    if (source_entity.projectId !== dto.projectId || target_entity.projectId !== dto.projectId) {
+    if (sourceEntity.projectId !== dto.projectId || targetEntity.projectId !== dto.projectId) {
       throw new BadRequestException('Cross-project relationships are not allowed');
     }
 
     // Per-kind endpoint-type validation
     if (dto.kind === 'hierarchy') {
-      if (source_entity.type !== 'thought' || target_entity.type !== 'thought') {
+      if (sourceEntity.type !== 'thought' || targetEntity.type !== 'thought') {
         throw new BadRequestException('hierarchy relationships require thought/thought endpoints');
       }
     } else if (dto.kind === 'tag') {
-      if (source_entity.type !== 'thought' || target_entity.type !== 'label') {
+      if (sourceEntity.type !== 'thought' || targetEntity.type !== 'label') {
         throw new BadRequestException('tag relationships require thought→label');
       }
     }

@@ -32,13 +32,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       // The actual handler executes after canActivate resolves, within this
       // async context — Node's ALS propagates the store through promise chains
       // that originate from this call frame.
-      return tenantStorage.run({ userId }, async () => {
-        // Await the validation result (may be Promise<boolean> | boolean | Observable).
-        if (result instanceof Promise) {
-          return result;
-        }
-        return result;
-      });
+      return tenantStorage.run({ userId }, () => result);
     }
 
     return result;
