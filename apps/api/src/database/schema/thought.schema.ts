@@ -29,10 +29,11 @@
  *   - No colorId FK (color is inline varchar(7))
  *   - No is_root (topology handled by relationships table)
  */
-import { pgTable, uuid, varchar, text, integer, index } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, text, integer, index, pgPolicy } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { entities } from './entities.schema';
 import { users } from './users.schema';
+import { appUser } from './app-user-role.schema';
 
 export const thoughts = pgTable(
   'thoughts',
@@ -58,8 +59,15 @@ export const thoughts = pgTable(
   (t) => [
     index('idx_thoughts_project_id').on(t.projectId),
     index('idx_thoughts_owner_id').on(t.ownerId),
+    pgPolicy('thoughts_owner_isolation', {
+      as: 'permissive',
+      for: 'all',
+      to: appUser,
+      using: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+      withCheck: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+    }),
   ],
-);
+).enableRLS();
 
 export const thoughtsRelations = relations(thoughts, ({ one }) => ({
   entity: one(entities, {

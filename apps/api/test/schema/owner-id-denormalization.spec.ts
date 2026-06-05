@@ -34,7 +34,10 @@ function indexNames(table: DrizzleTable): string[] {
   ];
   const config = buildExtraConfig(extraConfigColumns);
   const builders = Array.isArray(config) ? config : Object.values(config);
-  return builders.map((builder: any) => builder.build(table).config.name);
+  // PgPolicy items lack .build(); filter to index builders only
+  return builders
+    .filter((builder: any) => typeof builder.build === 'function')
+    .map((builder: any) => builder.build(table).config.name);
 }
 
 const scopedTables: ReadonlyArray<{

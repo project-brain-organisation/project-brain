@@ -25,10 +25,12 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  pgPolicy,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { entities } from './entities.schema';
 import { users } from './users.schema';
+import { appUser } from './app-user-role.schema';
 
 export const relationshipKind = pgEnum('relationship_kind', [
   'hierarchy',
@@ -76,5 +78,12 @@ export const relationships = pgTable(
     uniqueIndex('uq_relationship_edge_source_target_label')
       .on(t.sourceId, t.targetId, t.labelId)
       .where(sql`kind = 'edge'`),
+    pgPolicy('relationships_owner_isolation', {
+      as: 'permissive',
+      for: 'all',
+      to: appUser,
+      using: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+      withCheck: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+    }),
   ],
-);
+).enableRLS();

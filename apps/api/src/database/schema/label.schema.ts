@@ -27,10 +27,11 @@
  *   - No user_id (ownership flows through entities → project_meta → owner)
  *   - color is inline varchar(7) with a default (no FK to a colors table)
  */
-import { pgTable, uuid, varchar, boolean, index } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, boolean, index, pgPolicy } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { entities } from './entities.schema';
 import { users } from './users.schema';
+import { appUser } from './app-user-role.schema';
 
 export const labels = pgTable(
   'labels',
@@ -51,8 +52,15 @@ export const labels = pgTable(
   (t) => [
     index('idx_labels_project_id').on(t.projectId),
     index('idx_labels_owner_id').on(t.ownerId),
+    pgPolicy('labels_owner_isolation', {
+      as: 'permissive',
+      for: 'all',
+      to: appUser,
+      using: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+      withCheck: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+    }),
   ],
-);
+).enableRLS();
 
 export const labelsRelations = relations(labels, ({ one }) => ({
   entity: one(entities, {

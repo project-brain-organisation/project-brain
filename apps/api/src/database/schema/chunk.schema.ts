@@ -18,11 +18,13 @@ import {
   timestamp,
   index,
   customType,
+  pgPolicy,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { entities } from './entities.schema';
 import { thoughts } from './thought.schema';
 import { users } from './users.schema';
+import { appUser } from './app-user-role.schema';
 
 // ── Custom pgvector type ─────────────────────────────────────────
 const vector = customType<{ data: number[] }>({
@@ -61,8 +63,15 @@ export const chunks = pgTable(
     index('idx_chunks_thought_id').on(t.thoughtId),
     index('idx_chunks_project_id').on(t.projectId),
     index('idx_chunks_owner_id').on(t.ownerId),
+    pgPolicy('chunks_owner_isolation', {
+      as: 'permissive',
+      for: 'all',
+      to: appUser,
+      using: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+      withCheck: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+    }),
   ],
-);
+).enableRLS();
 
 // ── Relations ────────────────────────────────────────────────────
 
