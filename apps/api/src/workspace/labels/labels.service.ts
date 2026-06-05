@@ -31,6 +31,7 @@ export class LabelsService {
         .values({
           id,
           projectId: dto.projectId,
+          ownerId: userId,
           name: dto.name,
           color: dto.color ?? '#999999',
           isEdge: dto.isEdge ?? false,

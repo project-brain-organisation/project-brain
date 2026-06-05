@@ -34,6 +34,7 @@ export class ThoughtsService {
         .values({
           id,
           projectId: dto.projectId,
+          ownerId: userId,
           body: dto.body,
           title: dto.title ?? '',
           color: dto.color ?? null,
@@ -55,7 +56,7 @@ export class ThoughtsService {
     // Fire-and-forget chunk+embed scoped to the owning project (async/background).
     if (dto.body) {
       this.pipelineService
-        .chunkAndEmbed(dto.projectId, thought.id, dto.body)
+        .chunkAndEmbed(dto.projectId, thought.id, dto.body, userId)
         .catch((err) =>
           this.logger.warn(`Chunk/embed failed for thought ${thought.id}: ${err.message}`),
         );
@@ -85,7 +86,7 @@ export class ThoughtsService {
 
     // Re-chunk + re-embed on body edit (async/background, project-scoped).
     this.pipelineService
-      .rechunk(thought.projectId, id, body)
+      .rechunk(thought.projectId, id, body, userId)
       .catch((err) =>
         this.logger.warn(`Re-chunk/embed failed for thought ${id}: ${err.message}`),
       );

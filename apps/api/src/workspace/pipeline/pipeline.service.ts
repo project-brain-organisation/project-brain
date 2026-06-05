@@ -31,12 +31,18 @@ export class PipelineService {
    * fire-and-forget by ThoughtsService create/update with a logged catch so the
    * caller returns without awaiting embedding.
    */
-  async chunkAndEmbed(projectId: string, thoughtId: string, body: string): Promise<void> {
+  async chunkAndEmbed(
+    projectId: string,
+    thoughtId: string,
+    body: string,
+    ownerId: string,
+  ): Promise<void> {
     const chunkTexts = this.chunkingService.chunk(body);
     if (chunkTexts.length === 0) return;
 
     const chunkRows = chunkTexts.map((text, index) => ({
       projectId,
+      ownerId,
       thoughtId,
       body: text,
       chunkIndex: index,
@@ -62,9 +68,14 @@ export class PipelineService {
    * Re-chunk a thought after a body edit: drop existing chunks then re-run the
    * pipeline. Preserves async/background behaviour at the call site.
    */
-  async rechunk(projectId: string, thoughtId: string, body: string): Promise<void> {
+  async rechunk(
+    projectId: string,
+    thoughtId: string,
+    body: string,
+    ownerId: string,
+  ): Promise<void> {
     await this.db.db.delete(chunks).where(eq(chunks.thoughtId, thoughtId));
-    await this.chunkAndEmbed(projectId, thoughtId, body);
+    await this.chunkAndEmbed(projectId, thoughtId, body, ownerId);
   }
 
   /**

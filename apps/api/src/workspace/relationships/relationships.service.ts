@@ -66,6 +66,7 @@ export class RelationshipsService {
         .insert(relationships)
         .values({
           projectId: dto.projectId,
+          ownerId: userId,
           sourceId: dto.sourceId,
           targetId: dto.targetId,
           kind: dto.kind,
