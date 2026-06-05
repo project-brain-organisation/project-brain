@@ -6,10 +6,11 @@
  *   1. INSERT into entities (type = 'project')
  *   2. INSERT into project_meta with the same id
  */
-import { pgTable, uuid, varchar, boolean, index } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, varchar, boolean, index, pgPolicy } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { entities } from './entities.schema';
 import { users } from './users.schema';
+import { appUser } from './app-user-role.schema';
 
 export const projectMeta = pgTable(
   'project_meta',
@@ -24,8 +25,23 @@ export const projectMeta = pgTable(
     emoji: varchar('emoji', { length: 16 }),
     isPublic: boolean('is_public').notNull().default(false),
   },
-  (t) => [index('idx_project_meta_owner_id').on(t.ownerId)],
-);
+  (t) => [
+    index('idx_project_meta_owner_id').on(t.ownerId),
+    pgPolicy('project_meta_owner_isolation', {
+      as: 'permissive',
+      for: 'all',
+      to: appUser,
+      using: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+      withCheck: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
+    }),
+    pgPolicy('project_meta_public_read', {
+      as: 'permissive',
+      for: 'select',
+      to: appUser,
+      using: sql`${t.isPublic} = true`,
+    }),
+  ],
+).enableRLS();
 
 export const projectMetaRelations = relations(projectMeta, ({ one }) => ({
   entity: one(entities, {
