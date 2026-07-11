@@ -325,6 +325,79 @@ describe('WorkspaceThoughtsService', () => {
     });
   });
 
+  // ── B7: update() — general partial patch (title/body/canvas) ─────
+
+  describe('update', () => {
+    function makeUpdateSetup(thoughtRow: Record<string, unknown>, updatedRow: Record<string, unknown>) {
+      const setSpy = jest.fn();
+      const updateChain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
+      updateChain.set = jest.fn((vals: Record<string, unknown>) => {
+        setSpy(vals);
+        return updateChain;
+      });
+      updateChain.where = jest.fn().mockReturnValue(updateChain);
+      updateChain.returning = jest.fn().mockResolvedValue([updatedRow]);
+
+      const tx = {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue(thoughtRow ? [thoughtRow] : []),
+        }),
+        update: jest.fn().mockReturnValue(updateChain),
+        delete: jest.fn().mockReturnValue(makeDeleteChain()),
+        insert: jest.fn(),
+      };
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
+      return { dbService, setSpy };
+    }
+
+    it('patches only the provided fields and skips rechunk when body is unchanged', async () => {
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: null };
+      const updatedRow = { ...thoughtRow, title: 'New title', canvasX: 10 };
+      const { dbService, setSpy } = makeUpdateSetup(thoughtRow, updatedRow);
+      const pipeline = makePipelineService();
+      const service = new ThoughtsService(dbService, makeProjectsService(), pipeline, makeWorkspaceEventsService());
+
+      const result = await service.update('user-1', 'thought-1', { title: 'New title', canvasX: 10 });
+
+      expect(setSpy).toHaveBeenCalledWith({ title: 'New title', canvasX: 10 });
+      expect(pipeline.rechunk).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ title: 'New title', canvasX: 10 });
+    });
+
+    it('re-chunks via the pipeline when body actually changes', async () => {
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'old body', title: '', color: null };
+      const updatedRow = { ...thoughtRow, body: 'new body' };
+      const { dbService } = makeUpdateSetup(thoughtRow, updatedRow);
+      const pipeline = makePipelineService();
+      const service = new ThoughtsService(dbService, makeProjectsService(), pipeline, makeWorkspaceEventsService());
+
+      await service.update('user-1', 'thought-1', { body: 'new body' });
+
+      expect(pipeline.rechunk).toHaveBeenCalledWith('proj-1', 'thought-1', 'new body', 'user-1');
+    });
+
+    it('throws NotFoundException when the thought is missing or RLS-invisible', async () => {
+      const tx = {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([]),
+        }),
+        update: jest.fn(),
+        delete: jest.fn(),
+        insert: jest.fn(),
+      };
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
+      const service = new ThoughtsService(dbService, makeProjectsService(), makePipelineService(), makeWorkspaceEventsService());
+
+      await expect(service.update('user-1', 'ghost', { title: 'x' })).rejects.toThrow(NotFoundException);
+    });
+  });
+
   // ── B6: NotFoundException from thought lookup ────────────────────
 
   describe('remove', () => {

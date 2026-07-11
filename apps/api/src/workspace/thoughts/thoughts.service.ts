@@ -38,6 +38,10 @@ export class ThoughtsService {
           body: dto.body,
           title: dto.title ?? '',
           color: dto.color ?? null,
+          canvasX: dto.canvasX ?? null,
+          canvasY: dto.canvasY ?? null,
+          width: dto.width ?? null,
+          height: dto.height ?? null,
         })
         .returning();
 
@@ -97,6 +101,70 @@ export class ThoughtsService {
       .catch((err) =>
         this.logger.warn(`Re-chunk/embed failed for thought ${id}: ${err.message}`),
       );
+
+    this.workspaceEvents.publish(userId, {
+      eventId: crypto.randomUUID(),
+      type: 'thought.updated',
+      source,
+      resourceId: id,
+      projectId: thought.projectId,
+      timestamp: new Date().toISOString(),
+    });
+
+    return updated;
+  }
+
+  async update(
+    userId: string,
+    id: string,
+    patch: {
+      body?: string;
+      title?: string;
+      canvasX?: number | null;
+      canvasY?: number | null;
+      width?: number | null;
+      height?: number | null;
+    },
+    source: 'user' | 'mcp' = 'user',
+  ) {
+    const thought = await this.db.asUser(userId, async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(thoughts)
+        .where(eq(thoughts.id, id))
+        .limit(1);
+      return row;
+    });
+
+    if (!thought) {
+      throw new NotFoundException(`Thought ${id} not found`);
+    }
+
+    // Ownership isolation is enforced by RLS (using clause on thoughts table).
+
+    const [updated] = await this.db.asUser(userId, async (tx) =>
+      tx
+        .update(thoughts)
+        .set({
+          ...(patch.body !== undefined && { body: patch.body }),
+          ...(patch.title !== undefined && { title: patch.title }),
+          ...(patch.canvasX !== undefined && { canvasX: patch.canvasX }),
+          ...(patch.canvasY !== undefined && { canvasY: patch.canvasY }),
+          ...(patch.width !== undefined && { width: patch.width }),
+          ...(patch.height !== undefined && { height: patch.height }),
+        })
+        .where(eq(thoughts.id, id))
+        .returning(),
+    );
+
+    // Re-chunk + re-embed only when the body text actually changed.
+    if (patch.body !== undefined && patch.body !== thought.body) {
+      this.pipelineService
+        .rechunk(thought.projectId, id, patch.body, userId)
+        .catch((err) =>
+          this.logger.warn(`Re-chunk/embed failed for thought ${id}: ${err.message}`),
+        );
+    }
 
     this.workspaceEvents.publish(userId, {
       eventId: crypto.randomUUID(),

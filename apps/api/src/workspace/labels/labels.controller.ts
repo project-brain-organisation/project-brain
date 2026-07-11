@@ -28,26 +28,26 @@ export class LabelsController {
     @Req() req: any,
     @Body(new ZodValidationPipe(createLabelSchema)) dto: CreateLabelRequest,
   ) {
-    return this.labelsService.create(req.user.sub, dto);
+    return this.labelsService.create(req.user.userId, dto);
   }
 
   @Get('project/:projectId')
   findByProject(@Req() req: any, @Param('projectId') projectId: string) {
-    return this.labelsService.findByProject(req.user.sub, projectId);
+    return this.labelsService.findByProject(req.user.userId, projectId);
   }
 
   @Get(':id')
   findOne(@Req() req: any, @Param('id') id: string) {
-    return this.labelsService.findOne(req.user.sub, id);
+    return this.labelsService.findOne(req.user.userId, id);
   }
 
   @Patch(':id')
   update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateLabelDto) {
-    return this.labelsService.update(req.user.sub, id, dto);
+    return this.labelsService.update(req.user.userId, id, dto);
   }
 
   @Delete(':id')
   remove(@Req() req: any, @Param('id') id: string) {
-    return this.labelsService.remove(req.user.sub, id);
+    return this.labelsService.remove(req.user.userId, id);
   }
 }

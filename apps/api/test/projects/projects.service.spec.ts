@@ -5,7 +5,8 @@
  * Behaviors:
  *   B1: assertOwnership throws ForbiddenException when owner_id does not match
  *   B2: assertOwnership resolves when owner matches
- *   B3: create runs a DB transaction inserting into both entities and project_meta
+ *   B3: create runs under asUser(userId) inserting into both entities and
+ *       project_meta so RLS sees app.current_user_id for the whole transaction
  *
  * DatabaseService is mocked at the driven port boundary.
  * No mocks inside the hexagonal domain — only at port boundaries.
@@ -15,7 +16,7 @@ import { ForbiddenException } from '@nestjs/common';
 import { ProjectsService } from '../../src/projects/projects.service';
 import type { DatabaseService } from '../../src/database/database.service';
 
-// ── Fluent Drizzle mock helpers ────────────────────────────────────
+// ── Fluent Drizzle tx mock helpers ─────────────────────────────────
 
 function makeSelectChain(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
@@ -25,26 +26,44 @@ function makeSelectChain(rows: unknown[]) {
   return chain;
 }
 
-function makeInsertChain(rows: unknown[]) {
+function makeUpdateChain(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
-  chain.values = jest.fn().mockReturnValue(chain);
+  chain.set = jest.fn().mockReturnValue(chain);
+  chain.where = jest.fn().mockReturnValue(chain);
   chain.returning = jest.fn().mockResolvedValue(rows);
   return chain;
 }
 
 function makeDeleteChain() {
   const chain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
-  chain.from = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockResolvedValue(undefined);
   return chain;
 }
 
 /**
- * Build a DatabaseService mock whose db exposes a transaction() that
- * delegates to an async callback receiving a transaction handle (tx).
- * The tx handle itself tracks insert calls for both tables.
+ * Build a DatabaseService mock where asUser() routes the callback through a
+ * tx double — mirrors the real DatabaseService.asUser() shape (callback
+ * receives a tx handle inside a tenant-scoped transaction).
  */
-function makeTxMock() {
+function makeDbService(selectRows: unknown[] = []) {
+  const tx = {
+    select: jest.fn().mockReturnValue(makeSelectChain(selectRows)),
+    update: jest.fn().mockReturnValue(makeUpdateChain([])),
+    delete: jest.fn().mockReturnValue(makeDeleteChain()),
+    insert: jest.fn(),
+  };
+
+  const asUser = jest.fn(
+    (_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
+  );
+
+  return { asUser, tx, dbService: { asUser } as unknown as DatabaseService };
+}
+
+/**
+ * tx mock for create(): tracks insert calls for entities and project_meta.
+ */
+function makeCreateTxMock() {
   const txInsertCalls: Array<{ tableName: string; values: unknown }> = [];
 
   const insertedMeta = {
@@ -66,27 +85,20 @@ function makeTxMock() {
   };
 
   const tx = {
-    insert: jest.fn((table: { _: { name: string } } | unknown) => {
-      // Identify which table is being inserted into by checking its structure.
-      // We use the table reference identity — projectMeta has 'ownerId' column key.
-      const tbl = table as Record<string, unknown>;
-      const hasOwnerId = tbl && typeof tbl === 'object' && 'ownerId' in tbl;
-      const tableName = hasOwnerId ? 'project_meta' : 'entities';
-      return makeTxInsertChain(tableName, hasOwnerId ? [insertedMeta] : [{}]);
+    insert: jest.fn((table: Record<string, unknown>) => {
+      const tableName =
+        ((table as any)[Symbol.for('drizzle:Name')] as string) ?? 'unknown';
+      const rows = tableName === 'project_meta' ? [insertedMeta] : [{}];
+      return makeTxInsertChain(tableName, rows);
     }),
   };
 
-  const drizzle = {
-    select: jest.fn().mockReturnValue(makeSelectChain([])),
-    insert: jest.fn().mockReturnValue(makeInsertChain([])),
-    delete: jest.fn().mockReturnValue(makeDeleteChain()),
-    transaction: jest.fn().mockImplementation(async (cb: (tx: typeof tx) => Promise<unknown>) => {
-      return cb(tx);
-    }),
-  };
+  const asUser = jest.fn(
+    (_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx),
+  );
 
-  const dbService = { db: drizzle } as unknown as DatabaseService;
-  return { dbService, drizzle, tx, txInsertCalls };
+  const dbService = { asUser } as unknown as DatabaseService;
+  return { dbService, asUser, tx, txInsertCalls };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────
@@ -95,14 +107,7 @@ describe('ProjectsService', () => {
   describe('assertOwnership', () => {
     it('throws ForbiddenException when owner_id does not match requesting user', async () => {
       const meta = { id: 'proj-1', ownerId: 'owner-abc', name: 'Test', emoji: null, isPublic: false };
-      const selectChain = makeSelectChain([meta]);
-      const drizzle = {
-        select: jest.fn().mockReturnValue(selectChain),
-        insert: jest.fn(),
-        delete: jest.fn(),
-        transaction: jest.fn(),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const { dbService } = makeDbService([meta]);
       const service = new ProjectsService(dbService);
 
       await expect(service.assertOwnership('different-user', 'proj-1')).rejects.toThrow(
@@ -112,28 +117,15 @@ describe('ProjectsService', () => {
 
     it('resolves without error when owner_id matches requesting user', async () => {
       const meta = { id: 'proj-1', ownerId: 'user-123', name: 'Test', emoji: null, isPublic: false };
-      const selectChain = makeSelectChain([meta]);
-      const drizzle = {
-        select: jest.fn().mockReturnValue(selectChain),
-        insert: jest.fn(),
-        delete: jest.fn(),
-        transaction: jest.fn(),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const { dbService, asUser } = makeDbService([meta]);
       const service = new ProjectsService(dbService);
 
       await expect(service.assertOwnership('user-123', 'proj-1')).resolves.toBeUndefined();
+      expect(asUser).toHaveBeenCalledWith('user-123', expect.any(Function));
     });
 
-    it('throws ForbiddenException when project row does not exist', async () => {
-      const selectChain = makeSelectChain([]);
-      const drizzle = {
-        select: jest.fn().mockReturnValue(selectChain),
-        insert: jest.fn(),
-        delete: jest.fn(),
-        transaction: jest.fn(),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+    it('throws ForbiddenException when project row does not exist (or is RLS-invisible)', async () => {
+      const { dbService } = makeDbService([]);
       const service = new ProjectsService(dbService);
 
       await expect(service.assertOwnership('any-user', 'nonexistent')).rejects.toThrow(
@@ -143,14 +135,15 @@ describe('ProjectsService', () => {
   });
 
   describe('create', () => {
-    it('calls db.transaction and inserts into both entities and project_meta tables', async () => {
-      const { dbService, drizzle, txInsertCalls } = makeTxMock();
+    it('runs under asUser(userId) and inserts into both entities and project_meta tables', async () => {
+      const { dbService, asUser, txInsertCalls } = makeCreateTxMock();
       const service = new ProjectsService(dbService);
 
       const result = await service.create('user-1', { name: 'My Project' });
 
-      // Transaction was invoked
-      expect(drizzle.transaction).toHaveBeenCalledTimes(1);
+      // Tenant-scoped transaction was invoked for the requesting user
+      expect(asUser).toHaveBeenCalledTimes(1);
+      expect(asUser).toHaveBeenCalledWith('user-1', expect.any(Function));
 
       // Both tables received an insert
       const tableNames = txInsertCalls.map((c) => c.tableName);
@@ -167,15 +160,10 @@ describe('ProjectsService', () => {
           throw new Error('DB constraint violation');
         }),
       };
-      const drizzle = {
-        select: jest.fn(),
-        insert: jest.fn(),
-        delete: jest.fn(),
-        transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
-          return cb(tx);
-        }),
-      };
-      const dbService = { db: drizzle } as unknown as DatabaseService;
+      const asUser = jest.fn(
+        (_userId: string, cb: (tx: unknown) => Promise<unknown>) => cb(tx),
+      );
+      const dbService = { asUser } as unknown as DatabaseService;
       const service = new ProjectsService(dbService);
 
       await expect(service.create('user-1', { name: 'Fail Project' })).rejects.toThrow(

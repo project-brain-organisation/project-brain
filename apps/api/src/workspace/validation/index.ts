@@ -9,6 +9,10 @@
 export {
   createThoughtSchema,
   type CreateThoughtRequest,
+  updateThoughtSchema,
+  type UpdateThoughtRequest,
+  setThoughtColorSchema,
+  type SetThoughtColorRequest,
 } from './thought.schema';
 export {
   createLabelSchema,

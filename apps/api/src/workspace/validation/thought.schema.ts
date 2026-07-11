@@ -24,8 +24,9 @@ export const createThoughtSchema = z
   .object({
     // projectId is the entities-table scoping column, required on create.
     projectId: entityInsert.shape.projectId,
-    // body lives on the thoughts subtype; require a non-empty trimmed value.
-    body: z.string().trim().min(1).max(50_000),
+    // body lives on the thoughts subtype. Empty is allowed — the UI creates a
+    // blank card first and the user types into it (column defaults to '').
+    body: z.string().trim().max(50_000),
   })
   .extend({
     title: thoughtInsert.shape.title.optional(),
@@ -41,3 +42,27 @@ export const createThoughtSchema = z
   .strict();
 
 export type CreateThoughtRequest = z.infer<typeof createThoughtSchema>;
+
+export const updateThoughtSchema = z
+  .object({
+    body: z.string().trim().max(50_000).optional(),
+    title: thoughtInsert.shape.title.optional(),
+    canvasX: thoughtInsert.shape.canvasX.optional(),
+    canvasY: thoughtInsert.shape.canvasY.optional(),
+    width: thoughtInsert.shape.width.optional(),
+    height: thoughtInsert.shape.height.optional(),
+  })
+  .strict()
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: 'at least one field is required',
+  });
+
+export type UpdateThoughtRequest = z.infer<typeof updateThoughtSchema>;
+
+export const setThoughtColorSchema = z
+  .object({
+    color: z.string().regex(HEX_COLOR, 'color must match #RRGGBB'),
+  })
+  .strict();
+
+export type SetThoughtColorRequest = z.infer<typeof setThoughtColorSchema>;

@@ -27,7 +27,7 @@ export class RelationshipsController {
     @Req() req: any,
     @Body(new ZodValidationPipe(createRelationshipSchema)) dto: CreateRelationshipRequest,
   ) {
-    return this.relationshipsService.create(req.user.sub, dto);
+    return this.relationshipsService.create(req.user.userId, dto);
   }
 
   @Get()
@@ -36,21 +36,21 @@ export class RelationshipsController {
     @Query('projectId') projectId: string,
     @Query('kind') kind?: 'hierarchy' | 'tag' | 'edge',
   ) {
-    return this.relationshipsService.findByProject(req.user.sub, projectId, kind);
+    return this.relationshipsService.findByProject(req.user.userId, projectId, kind);
   }
 
   @Get('descendants/:thoughtId')
   findDescendants(@Req() req: any, @Param('thoughtId') thoughtId: string) {
-    return this.relationshipsService.findDescendants(req.user.sub, thoughtId);
+    return this.relationshipsService.findDescendants(req.user.userId, thoughtId);
   }
 
   @Get(':id')
   findOne(@Req() req: any, @Param('id') id: string) {
-    return this.relationshipsService.findOne(req.user.sub, id);
+    return this.relationshipsService.findOne(req.user.userId, id);
   }
 
   @Delete(':id')
   remove(@Req() req: any, @Param('id') id: string) {
-    return this.relationshipsService.remove(req.user.sub, id);
+    return this.relationshipsService.remove(req.user.userId, id);
   }
 }

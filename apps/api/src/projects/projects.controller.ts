@@ -25,12 +25,12 @@ export class ProjectsController {
 
   @Get()
   findAll(@Req() req: any) {
-    return this.projectsService.findAllByUser(req.user.sub);
+    return this.projectsService.findAllByUser(req.user.userId);
   }
 
   @Get(':id')
   findOne(@Req() req: any, @Param('id') id: string) {
-    return this.projectsService.findOne(req.user.sub, id);
+    return this.projectsService.findOne(req.user.userId, id);
   }
 
   @Post()
@@ -38,16 +38,16 @@ export class ProjectsController {
     @Req() req: any,
     @Body(new ZodValidationPipe(createProjectSchema)) dto: CreateProjectRequest,
   ) {
-    return this.projectsService.create(req.user.sub, dto);
+    return this.projectsService.create(req.user.userId, dto);
   }
 
   @Patch(':id')
   update(@Req() req: any, @Param('id') id: string, @Body() dto: Partial<CreateProjectDto>) {
-    return this.projectsService.update(req.user.sub, id, dto);
+    return this.projectsService.update(req.user.userId, id, dto);
   }
 
   @Delete(':id')
   remove(@Req() req: any, @Param('id') id: string) {
-    return this.projectsService.remove(req.user.sub, id);
+    return this.projectsService.remove(req.user.userId, id);
   }
 }
