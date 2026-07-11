@@ -91,16 +91,21 @@ export class PipelineService {
   }
 
   /**
-   * Project-scoped, ownership-gated semantic search. Ownership is asserted
-   * BEFORE any DB access; similarity is filtered by c.project_id (never user_id).
-   * Runs inside asUser(userId) so that RLS policies on the chunks table see the
-   * correct app.current_user_id and scope rows to the authenticated user.
+   * Ownership-gated semantic search. Runs inside asUser(userId) so that RLS
+   * policies on the chunks table see the correct app.current_user_id and scope
+   * rows to the authenticated user. projectId only narrows the search; when
+   * omitted, all of the user's projects are searched (RLS still hides other
+   * tenants' rows).
    */
-  async semanticSearch(userId: string, projectId: string, query: string, n: number = 5) {
-    // Ownership isolation enforced by RLS on chunks table; assertOwnership removed.
-    // RLS scopes the similarity query to the current user's rows automatically.
+  async semanticSearch(
+    userId: string,
+    projectId: string | undefined,
+    query: string,
+    n: number = 5,
+  ) {
     const clampedN = Math.min(Math.max(n, 1), 20);
     const [queryVector] = await this.embeddingService.embed([query]);
+    const projectFilter = projectId ? sql`c.project_id = ${projectId}` : sql`TRUE`;
 
     return this.db.asUser(userId, async (tx) => {
       const results = await tx.execute(sql`
@@ -113,7 +118,7 @@ export class PipelineService {
           1 - (c.vector_embedding <=> ${JSON.stringify(queryVector)}::vector) AS "score"
         FROM chunks c
         JOIN thoughts t ON t.id = c.thought_id
-        WHERE c.project_id = ${projectId}
+        WHERE ${projectFilter}
           AND c.vector_embedding IS NOT NULL
         ORDER BY c.vector_embedding <=> ${JSON.stringify(queryVector)}::vector
         LIMIT ${clampedN}

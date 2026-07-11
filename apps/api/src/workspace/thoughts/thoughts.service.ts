@@ -110,7 +110,7 @@ export class ThoughtsService {
     return updated;
   }
 
-  async semanticSearch(userId: string, projectId: string, query: string, n?: number) {
+  async semanticSearch(userId: string, projectId: string | undefined, query: string, n?: number) {
     return this.pipelineService.semanticSearch(userId, projectId, query, n);
   }
 

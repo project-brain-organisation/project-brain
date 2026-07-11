@@ -100,7 +100,7 @@ export class InternalMcpController {
   @Post('remember')
   remember(
     @Req() req: Request,
-    @Body() body: { query: string; projectId: string; n?: number },
+    @Body() body: { query: string; projectId?: string; n?: number },
   ) {
     const userId = this.userIdFromHeaders(req);
     return this.thoughtsService.semanticSearch(userId, body.projectId, body.query, body.n ?? 5);
@@ -110,32 +110,36 @@ export class InternalMcpController {
   async elaborate(@Req() req: Request, @Param('chunkId') chunkId: string) {
     const userId = this.userIdFromHeaders(req);
 
-    const [chunk] = await this.db.db
-      .select({
-        chunkId: chunks.id,
-        chunkBody: chunks.body,
-        chunkIndex: chunks.chunkIndex,
-        thoughtId: chunks.thoughtId,
-        projectId: chunks.projectId,
-      })
-      .from(chunks)
-      .where(eq(chunks.id, chunkId))
-      .limit(1);
+    // RLS: relationships/chunks reads must run inside asUser() so
+    // app.current_user_id is set; a bare db.db query fails the policy cast.
+    const [chunk] = await this.db.asUser(userId, async (tx) =>
+      tx
+        .select({
+          chunkId: chunks.id,
+          chunkBody: chunks.body,
+          chunkIndex: chunks.chunkIndex,
+          thoughtId: chunks.thoughtId,
+          projectId: chunks.projectId,
+        })
+        .from(chunks)
+        .where(eq(chunks.id, chunkId))
+        .limit(1),
+    );
 
     if (!chunk) {
       throw new BadRequestException('Chunk not found');
     }
 
-    await this.projectsService.assertOwnership(userId, chunk.projectId);
-
     const thought = await this.thoughtsService.findOne(userId, chunk.thoughtId);
 
     // Parent via hierarchy: source=child → target=parent
-    const [parentRel] = await this.db.db
-      .select()
-      .from(relationships)
-      .where(and(eq(relationships.sourceId, chunk.thoughtId), eq(relationships.kind, 'hierarchy')))
-      .limit(1);
+    const [parentRel] = await this.db.asUser(userId, async (tx) =>
+      tx
+        .select()
+        .from(relationships)
+        .where(and(eq(relationships.sourceId, chunk.thoughtId), eq(relationships.kind, 'hierarchy')))
+        .limit(1),
+    );
 
     const parent = parentRel
       ? await this.thoughtsService.findOne(userId, parentRel.targetId)
@@ -143,10 +147,12 @@ export class InternalMcpController {
 
     let siblings: unknown[] = [];
     if (parentRel) {
-      const siblingRels = await this.db.db
-        .select()
-        .from(relationships)
-        .where(and(eq(relationships.targetId, parentRel.targetId), eq(relationships.kind, 'hierarchy')));
+      const siblingRels = await this.db.asUser(userId, async (tx) =>
+        tx
+          .select()
+          .from(relationships)
+          .where(and(eq(relationships.targetId, parentRel.targetId), eq(relationships.kind, 'hierarchy'))),
+      );
       siblings = await Promise.all(
         siblingRels
           .filter((r) => r.sourceId !== chunk.thoughtId)
@@ -173,44 +179,50 @@ export class InternalMcpController {
 
     const thought = await this.thoughtsService.findOne(userId, thoughtId);
 
-    // Parent via hierarchy
-    const [parentRel] = await this.db.db
-      .select()
-      .from(relationships)
-      .where(and(eq(relationships.sourceId, thoughtId), eq(relationships.kind, 'hierarchy')))
-      .limit(1);
+    // Parent via hierarchy (asUser: RLS needs app.current_user_id set)
+    const [parentRel] = await this.db.asUser(userId, async (tx) =>
+      tx
+        .select()
+        .from(relationships)
+        .where(and(eq(relationships.sourceId, thoughtId), eq(relationships.kind, 'hierarchy')))
+        .limit(1),
+    );
 
     const parent = parentRel
       ? await this.thoughtsService.findOne(userId, parentRel.targetId)
       : null;
 
     // Children: thoughts whose hierarchy target = thoughtId
-    const childRels = await this.db.db
-      .select()
-      .from(relationships)
-      .where(and(eq(relationships.targetId, thoughtId), eq(relationships.kind, 'hierarchy')));
+    const childRels = await this.db.asUser(userId, async (tx) =>
+      tx
+        .select()
+        .from(relationships)
+        .where(and(eq(relationships.targetId, thoughtId), eq(relationships.kind, 'hierarchy'))),
+    );
 
     const children = await Promise.all(
       childRels.map((r) => this.thoughtsService.findOne(userId, r.sourceId)),
     );
 
     // Labels via tag relationships: source=thought → target=label
-    const tagRels = await this.db.db
-      .select()
-      .from(relationships)
-      .where(and(eq(relationships.sourceId, thoughtId), eq(relationships.kind, 'tag')));
-
     const labelRows = (
-      await Promise.all(
-        tagRels.map(async (r) => {
-          const [label] = await this.db.db
+      await this.db.asUser(userId, async (tx) => {
+        const tagRels = await tx
+          .select()
+          .from(relationships)
+          .where(and(eq(relationships.sourceId, thoughtId), eq(relationships.kind, 'tag')));
+
+        const rows = [];
+        for (const r of tagRels) {
+          const [label] = await tx
             .select()
             .from(labels)
             .where(eq(labels.id, r.targetId))
             .limit(1);
-          return label;
-        }),
-      )
+          rows.push(label);
+        }
+        return rows;
+      })
     ).filter(Boolean);
 
     const promptParts: string[] = ['Thought Context'];
@@ -305,17 +317,19 @@ export class InternalMcpController {
   ) {
     const userId = this.userIdFromHeaders(req);
 
-    const [rel] = await this.db.db
-      .select()
-      .from(relationships)
-      .where(
-        and(
-          eq(relationships.sourceId, body.thoughtId),
-          eq(relationships.targetId, body.labelId),
-          eq(relationships.kind, 'tag'),
-        ),
-      )
-      .limit(1);
+    const [rel] = await this.db.asUser(userId, async (tx) =>
+      tx
+        .select()
+        .from(relationships)
+        .where(
+          and(
+            eq(relationships.sourceId, body.thoughtId),
+            eq(relationships.targetId, body.labelId),
+            eq(relationships.kind, 'tag'),
+          ),
+        )
+        .limit(1),
+    );
 
     if (!rel) {
       throw new NotFoundException('Tag relationship not found');
@@ -331,22 +345,24 @@ export class InternalMcpController {
     // Ownership verified via findOne
     await this.thoughtsService.findOne(userId, thoughtId);
 
-    const tagRels = await this.db.db
-      .select()
-      .from(relationships)
-      .where(and(eq(relationships.sourceId, thoughtId), eq(relationships.kind, 'tag')));
-
     return (
-      await Promise.all(
-        tagRels.map(async (r) => {
-          const [label] = await this.db.db
+      await this.db.asUser(userId, async (tx) => {
+        const tagRels = await tx
+          .select()
+          .from(relationships)
+          .where(and(eq(relationships.sourceId, thoughtId), eq(relationships.kind, 'tag')));
+
+        const rows = [];
+        for (const r of tagRels) {
+          const [label] = await tx
             .select()
             .from(labels)
             .where(eq(labels.id, r.targetId))
             .limit(1);
-          return label;
-        }),
-      )
+          rows.push(label);
+        }
+        return rows;
+      })
     ).filter(Boolean);
   }
 
