@@ -233,11 +233,21 @@ app.post('/mcp', async (req: Request, res: Response) => {
       return;
     }
 
-    const args = tool.parseArguments(params.arguments ?? {});
-    const result = await tool.execute({ userId, scope }, args);
+    let result;
+    try {
+      const args = tool.parseArguments(params.arguments ?? {});
+      result = await tool.execute({ userId, scope }, args);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`tools/call ${params.name} threw: ${message}`);
+      res.json(jsonRpcError(id, -32603, `${params.name} failed: ${message}`));
+      return;
+    }
 
     if (!result.ok) {
-      res.json(jsonRpcError(id, -32001, `${tool.name} failed (${result.status})`));
+      const detail = result.error.slice(0, 300);
+      console.error(`tools/call ${params.name} upstream ${result.status}: ${detail}`);
+      res.json(jsonRpcError(id, -32001, `${tool.name} failed (${result.status}): ${detail}`));
       return;
     }
 
@@ -254,4 +264,5 @@ app.post('/mcp', async (req: Request, res: Response) => {
 
 app.listen(port, () => {
   console.log(`MCP sidecar running on http://localhost:${port}`);
+  console.log(`Internal API: ${internalApiUrl}`);
 });
