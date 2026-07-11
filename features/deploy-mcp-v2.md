@@ -1,71 +1,87 @@
-# Deploy MCP V2 to Railway
+# Deploy MCP V2 to prod (single environment, no staging)
 
-Railway currently serves the old V1 app at
-`https://project-brain-production-fb2d.up.railway.app` (only `remember` +
-`elaborate`). V2 in this repo has 20 tools and a spec-compliant OAuth flow,
-verified end-to-end locally on 2026-07-11. This checklist gets V2 live.
+Decision 2026-07-11: no staging env, no users yet. The Neon "dev" database
+becomes THE prod database (it already has the V2 schema + RLS applied and
+verified). The old V1 Neon database (separate Neon account) gets deleted
+LAST, after V2 prod is verified — it contains the V1 notes, so export
+anything worth keeping before deleting.
 
-## 1. Point the Railway services at V2
+## 1. Push the code (blocked on account switch)
 
-- [ ] In the Railway dashboard, check what the existing service(s) deploy from
-      (old repo? old branch?). Either repoint them to this repo/branch or create
-      fresh services from it.
-- [ ] Service **api**: root directory `apps/api` (Dockerfile build,
-      `apps/api/railway.toml` already configured).
-- [ ] Service **mcp**: root directory `apps/mcp` (Dockerfile build,
-      `apps/mcp/railway.toml` already configured).
-- [ ] Both need public domains (Settings → Networking → Generate Domain).
-      Note both URLs.
+- [ ] `main` has the V2 MCP fixes committed locally but CANNOT be pushed as
+      `matthewbierrum` (read-only on the org repo). Either
+      `gh auth switch -u harvey-flasheart` and `git push origin main`, or
+      grant matthewbierrum write access in the org settings.
 
-## 2. Environment variables
+## 2. Database — the Neon project `flat-rain-19023938`
 
-Generate fresh production secrets (do NOT reuse the dev values in local .env
-files): `openssl rand -hex 32` for each secret.
+- [ ] (Optional) Rename it `project-brain-prod` in the Neon console
+      (cosmetic; connection strings are unaffected).
+- [ ] Connection strings for Railway come from `apps/api/.env`:
+      `DATABASE_URL` (owner role) and `DATABASE_URL_APP` (`app_user`).
+- [ ] (Recommended) Rotate the `app_user` password before prod use — the
+      current one was generated for dev and sits in local .env files:
+      `ALTER ROLE app_user WITH PASSWORD '<new>'` + update both env values.
+- [ ] (Optional) Clean dev cruft: seed users `matt-dev`/`mallory-dev` and the
+      test projects "Project Brain Test Project" / "MCP smoke test".
+      Your real Google user ("Matt Bierrum") is already there and stays.
+
+## 3. Railway services
+
+- [ ] Repoint the existing service (or create fresh services) to deploy from
+      this repo, branch `main`:
+      - **api**: root directory `apps/api` (Dockerfile build)
+      - **mcp**: root directory `apps/mcp` (Dockerfile build)
+- [ ] Public domains on both (Settings → Networking). Note the URLs.
+- [ ] If the web app is also hosted on Railway, keep/point its service at
+      `apps/web` and set `VITE_MCP_URL=https://<mcp-domain>/mcp` at build time.
+
+## 4. Environment variables
+
+Generate fresh secrets for prod: `openssl rand -hex 32` each.
 
 **api service:**
-- [ ] `DATABASE_URL` — Neon prod, owner role (existing value if reusing the old service)
-- [ ] `DATABASE_URL_APP` — Neon prod, `app_user` role (RLS runtime pool)
-- [ ] `JWT_SECRET` — must be IDENTICAL on both services
+- [ ] `DATABASE_URL` — Neon owner string (section 2)
+- [ ] `DATABASE_URL_APP` — Neon `app_user` string (section 2)
+- [ ] `JWT_SECRET` — IDENTICAL on both services
+- [ ] `MCP_INTERNAL_KEY` — IDENTICAL on both services
 - [ ] `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
 - [ ] `GOOGLE_CALLBACK_URL` — `https://<api-domain>/api/auth/google/callback`
-      (also add this URL in the Google Cloud console → OAuth client → redirect URIs)
+      (register the same URL in Google Cloud console → OAuth client)
 - [ ] `OPENROUTER_API_KEY` — embeddings
-- [ ] `FRONTEND_URL` — the web app's URL (CORS + OAuth redirect)
-- [ ] `MCP_INTERNAL_KEY` — must be IDENTICAL on both services
+- [ ] `FRONTEND_URL` — the web app's public URL (CORS + OAuth redirect)
 
 **mcp service:**
-- [ ] `MCP_SERVER_SECRET`
-- [ ] `MCP_INTERNAL_KEY` — same value as api
-- [ ] `JWT_SECRET` — same value as api (sidecar verifies API-signed tokens)
-- [ ] `INTERNAL_API_URL` — api service URL; prefer Railway private networking
-      (`http://api.railway.internal:<port>`), public URL also works
-- [ ] `MCP_PUBLIC_API_URL` — the api service's PUBLIC https URL
-      (required: OAuth metadata tells clients where the sign-in service lives)
+- [ ] `MCP_SERVER_SECRET` — fresh secret
+- [ ] `MCP_INTERNAL_KEY` — same as api
+- [ ] `JWT_SECRET` — same as api (sidecar verifies API-signed tokens)
+- [ ] `INTERNAL_API_URL` — api URL (Railway private networking preferred)
+- [ ] `MCP_PUBLIC_API_URL` — the api service's PUBLIC https URL (OAuth
+      discovery tells clients where the sign-in service lives — required)
 - [ ] `NODE_ENV=production`
 
-## 3. Prod database check
-
-- [ ] V1's prod DB may predate the V2 schema. Verify migrations 0000–0005 are
-      applied to prod Neon (note: `drizzle/migrations/meta/_journal.json` only
-      registers 0000; 0001–0005 were applied manually — see memory/evolution docs).
-      If prod is still V1-shaped, plan the migration before cutting over.
-
-## 4. Verify the deployed MCP server (curl, no client needed)
+## 5. Verify from the outside (curl, before touching claude.ai)
 
 - [ ] `curl -i -X POST https://<mcp-domain>/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}'`
-      → **401 with a `WWW-Authenticate` header** containing `resource_metadata=`
+      → **401 with `WWW-Authenticate`** containing `resource_metadata=`
 - [ ] `curl https://<mcp-domain>/.well-known/oauth-protected-resource/mcp`
-      → JSON where `resource` = `https://<mcp-domain>/mcp` and
+      → `resource` = `https://<mcp-domain>/mcp`,
       `authorization_servers` = `["https://<api-domain>"]`
 - [ ] `curl https://<api-domain>/.well-known/oauth-authorization-server`
-      → JSON with authorize/token/register endpoints
+      → authorize/token/register endpoints
 - [ ] `curl -i -X POST https://<api-domain>/api/auth/mcp/register -H "Content-Type: application/json" -d '{"redirect_uris":["https://claude.ai/api/mcp/auth_callback"]}'`
       → 201 with a `client_id`
 
-## 5. Cut over the clients
+## 6. Cut over and clean up (ONLY after 5 passes)
 
-- [ ] Set `VITE_MCP_URL=https://<mcp-domain>/mcp` in the web app's build env
-      (McpDialog falls back to the old hardcoded domain otherwise) and redeploy web.
-- [ ] Add the connector in claude.ai with `https://<mcp-domain>/mcp`,
-      sign in with Google, and confirm all 20 tools appear.
-- [ ] Remove/park the old V1 service so it stops burning the usage credit.
+- [ ] Add the claude.ai connector: `https://<mcp-domain>/mcp`, sign in with
+      Google, confirm all 20 tools appear and `remember` works.
+- [ ] Log into the web app in prod, confirm normal use.
+- [ ] Export anything worth keeping from the OLD V1 Neon database
+      (other Neon account), then delete it.
+- [ ] Delete/park the old V1 Railway service if a new one replaced it.
+
+## Later (when there are users)
+
+- Duplicate this setup as a `staging` Railway environment + a Neon branch
+  for the staging DB; deploy staging from a `staging` branch.
