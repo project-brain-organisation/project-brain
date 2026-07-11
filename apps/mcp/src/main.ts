@@ -233,6 +233,12 @@ app.post('/mcp', async (req: Request, res: Response) => {
       return;
     }
 
+    // Tool execution failures are reported as CallToolResult with isError
+    // (MCP spec) — clients render the text; JSON-RPC error codes outside the
+    // standard set get masked by claude.ai as a generic message.
+    const toolError = (text: string) =>
+      res.json(jsonRpcResult(id, { content: [{ type: 'text', text }], isError: true }));
+
     let result;
     try {
       const args = tool.parseArguments(params.arguments ?? {});
@@ -240,14 +246,14 @@ app.post('/mcp', async (req: Request, res: Response) => {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`tools/call ${params.name} threw: ${message}`);
-      res.json(jsonRpcError(id, -32603, `${params.name} failed: ${message}`));
+      toolError(`${params.name} failed: ${message}`);
       return;
     }
 
     if (!result.ok) {
       const detail = result.error.slice(0, 300);
       console.error(`tools/call ${params.name} upstream ${result.status}: ${detail}`);
-      res.json(jsonRpcError(id, -32001, `${tool.name} failed (${result.status}): ${detail}`));
+      toolError(`${tool.name} failed (${result.status}): ${detail}`);
       return;
     }
 
