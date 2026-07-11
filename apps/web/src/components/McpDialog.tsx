@@ -9,7 +9,7 @@ interface Props {
 
 const MCP_URL =
   import.meta.env.VITE_MCP_URL ??
-  'https://project-brain-production-fb2d.up.railway.app/mcp';
+  'https://mcp-production-2ecd.up.railway.app/mcp';
 
 export function McpDialog({ open, onClose }: Props) {
   const [copied, setCopied] = useState(false);
