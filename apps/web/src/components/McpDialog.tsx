@@ -7,7 +7,9 @@ interface Props {
   onClose: () => void;
 }
 
-const MCP_URL = 'https://project-brain-production-fb2d.up.railway.app/mcp';
+const MCP_URL =
+  import.meta.env.VITE_MCP_URL ??
+  'https://project-brain-production-fb2d.up.railway.app/mcp';
 
 export function McpDialog({ open, onClose }: Props) {
   const [copied, setCopied] = useState(false);
@@ -57,9 +59,10 @@ export function McpDialog({ open, onClose }: Props) {
         </div>
 
         <p className="mcp-hint">
-          Exposes two tools: <code>remember</code> searches your notes by
-          meaning, and <code>elaborate</code> retrieves the full document for
-          a result.
+          Exposes your full workspace as tools: <code>remember</code> searches
+          your notes by meaning, <code>elaborate</code> expands a result into
+          its full thought, and further tools let the client browse, create,
+          edit, label and organize projects and thoughts.
         </p>
       </div>
     </div>,
