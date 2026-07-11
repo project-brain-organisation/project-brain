@@ -51,7 +51,7 @@ export class InternalMcpController {
     @Body() body: { name: string; emoji?: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    return this.projectsService.create(userId, { name: body.name, emoji: body.emoji });
+    return this.projectsService.create(userId, { name: body.name, emoji: body.emoji }, 'mcp');
   }
 
   @Get('thought/:thoughtId')

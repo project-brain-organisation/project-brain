@@ -15,6 +15,11 @@
 import { ForbiddenException } from '@nestjs/common';
 import { ProjectsService } from '../../src/projects/projects.service';
 import type { DatabaseService } from '../../src/database/database.service';
+import type { WorkspaceEventsService } from '../../src/workspace/gateway/workspace-events.service';
+
+function makeWorkspaceEventsService() {
+  return { publish: jest.fn() } as unknown as WorkspaceEventsService;
+}
 
 // ── Fluent Drizzle tx mock helpers ─────────────────────────────────
 
@@ -108,7 +113,7 @@ describe('ProjectsService', () => {
     it('throws ForbiddenException when owner_id does not match requesting user', async () => {
       const meta = { id: 'proj-1', ownerId: 'owner-abc', name: 'Test', emoji: null, isPublic: false };
       const { dbService } = makeDbService([meta]);
-      const service = new ProjectsService(dbService);
+      const service = new ProjectsService(dbService, makeWorkspaceEventsService());
 
       await expect(service.assertOwnership('different-user', 'proj-1')).rejects.toThrow(
         ForbiddenException,
@@ -118,7 +123,7 @@ describe('ProjectsService', () => {
     it('resolves without error when owner_id matches requesting user', async () => {
       const meta = { id: 'proj-1', ownerId: 'user-123', name: 'Test', emoji: null, isPublic: false };
       const { dbService, asUser } = makeDbService([meta]);
-      const service = new ProjectsService(dbService);
+      const service = new ProjectsService(dbService, makeWorkspaceEventsService());
 
       await expect(service.assertOwnership('user-123', 'proj-1')).resolves.toBeUndefined();
       expect(asUser).toHaveBeenCalledWith('user-123', expect.any(Function));
@@ -126,7 +131,7 @@ describe('ProjectsService', () => {
 
     it('throws ForbiddenException when project row does not exist (or is RLS-invisible)', async () => {
       const { dbService } = makeDbService([]);
-      const service = new ProjectsService(dbService);
+      const service = new ProjectsService(dbService, makeWorkspaceEventsService());
 
       await expect(service.assertOwnership('any-user', 'nonexistent')).rejects.toThrow(
         ForbiddenException,
@@ -137,7 +142,7 @@ describe('ProjectsService', () => {
   describe('create', () => {
     it('runs under asUser(userId) and inserts into both entities and project_meta tables', async () => {
       const { dbService, asUser, txInsertCalls } = makeCreateTxMock();
-      const service = new ProjectsService(dbService);
+      const service = new ProjectsService(dbService, makeWorkspaceEventsService());
 
       const result = await service.create('user-1', { name: 'My Project' });
 
@@ -164,7 +169,7 @@ describe('ProjectsService', () => {
         (_userId: string, cb: (tx: unknown) => Promise<unknown>) => cb(tx),
       );
       const dbService = { asUser } as unknown as DatabaseService;
-      const service = new ProjectsService(dbService);
+      const service = new ProjectsService(dbService, makeWorkspaceEventsService());
 
       await expect(service.create('user-1', { name: 'Fail Project' })).rejects.toThrow(
         'DB constraint violation',
