@@ -15,7 +15,7 @@ describe('list_projects tool', () => {
   it('has correct metadata', () => {
     const tool = makeTool();
     assert.equal(tool.name, 'list_projects');
-    assert.equal(tool.description, 'List all projects (root thoughts)');
+    assert.equal(tool.description, 'List all projects');
     assert.deepEqual(tool.inputSchema.properties, {});
   });
 

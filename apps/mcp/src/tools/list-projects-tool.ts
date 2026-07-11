@@ -10,7 +10,7 @@ export interface ListProjectsDeps {
 export function createListProjectsTool(deps: ListProjectsDeps): ToolDefinition {
   return {
     name: 'list_projects',
-    description: 'List all projects (root thoughts)',
+    description: 'List all projects',
     inputSchema: {
       type: 'object',
       properties: {},

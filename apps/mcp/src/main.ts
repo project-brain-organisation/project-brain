@@ -35,21 +35,43 @@ const apiClient = new ApiClient(internalApiUrl, internalApiKey);
 const { tools, toolByName } = createToolRegistry(apiClient);
 const app = express();
 
+// Behind Railway's reverse proxy: honor X-Forwarded-Proto so selfBase() is https.
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
+
+function selfBase(req: Request): string {
+  return `${req.protocol}://${req.get('host')}`;
+}
 
 function unauthorized(res: Response, message: string) {
   res.status(401).json({ error: message });
 }
 
-function unauthorizedWithChallenge(res: Response, message: string) {
+// RFC 9728: every 401 must carry a challenge pointing at the protected-resource
+// metadata, otherwise OAuth discovery (claude.ai connectors) cannot proceed.
+function unauthorizedWithChallenge(req: Request, res: Response, message: string) {
   const realm = process.env.MCP_AUTH_REALM ?? 'mcp';
-  const apiBase = process.env.MCP_PUBLIC_API_URL ?? process.env.INTERNAL_API_URL ?? 'http://localhost:3000';
-  const resource = process.env.MCP_RESOURCE_METADATA_URL ?? `${apiBase}/.well-known/oauth-protected-resource/mcp`;
+  const resource =
+    process.env.MCP_RESOURCE_METADATA_URL ??
+    `${selfBase(req)}/.well-known/oauth-protected-resource/mcp`;
   res.setHeader(
     'WWW-Authenticate',
     `Bearer realm="${realm}", resource_metadata="${resource}", error="invalid_token", error_description="${message}"`,
   );
   unauthorized(res, message);
+}
+
+// A request is authorized when it carries either the shared server key
+// (internal callers) or a per-user OAuth bearer token (MCP clients — claude.ai
+// cannot send custom headers, so the bearer path must suffice on its own).
+async function authorize(req: Request): Promise<{
+  ok: boolean;
+  claims: Awaited<ReturnType<typeof verifyMcpAccessToken>>;
+}> {
+  const hasServerKey = getMcpServerKey(req) === serverSecret;
+  const userToken = getMcpAccessToken(req);
+  const claims = userToken ? await verifyMcpAccessToken(userToken) : null;
+  return { ok: hasServerKey || claims !== null, claims };
 }
 
 function jsonRpcResult(id: string | number | null, result: unknown): JsonRpcResponse {
@@ -75,6 +97,22 @@ function jsonRpcError(
 app.get('/healthz', (_req, res) => {
   res.json({ ok: true });
 });
+
+// RFC 9728 protected-resource metadata, served on this origin (clients derive
+// the metadata URL from the MCP server URL). The authorization server is the
+// API, which hosts /.well-known/oauth-authorization-server and the OAuth routes.
+app.get(
+  ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'],
+  (req: Request, res: Response) => {
+    const authorizationServer = process.env.MCP_PUBLIC_API_URL ?? internalApiUrl;
+    res.json({
+      resource: process.env.MCP_PUBLIC_RESOURCE_URL ?? `${selfBase(req)}/mcp`,
+      authorization_servers: [authorizationServer],
+      bearer_methods_supported: ['header'],
+      scopes_supported: ['mcp:tools'],
+    });
+  },
+);
 
 app.use('/mcp', (req, res, next) => {
   const origin = req.header('origin');
@@ -104,10 +142,10 @@ app.use('/mcp', (req, res, next) => {
   next();
 });
 
-app.get('/mcp', (req, res) => {
-  const key = getMcpServerKey(req);
-  if (key !== serverSecret) {
-    unauthorized(res, 'Invalid or missing MCP key');
+app.get('/mcp', async (req, res) => {
+  const auth = await authorize(req);
+  if (!auth.ok) {
+    unauthorizedWithChallenge(req, res, authErrorMessage(req));
     return;
   }
 
@@ -128,9 +166,9 @@ app.get('/mcp', (req, res) => {
 });
 
 app.post('/mcp', async (req: Request, res: Response) => {
-  const key = getMcpServerKey(req);
-  if (key !== serverSecret) {
-    unauthorized(res, 'Invalid or missing MCP key');
+  const auth = await authorize(req);
+  if (!auth.ok) {
+    unauthorizedWithChallenge(req, res, authErrorMessage(req));
     return;
   }
 
@@ -172,15 +210,10 @@ app.post('/mcp', async (req: Request, res: Response) => {
   }
 
   if (message.method === 'tools/call') {
-    const userToken = getMcpAccessToken(req);
-    if (!userToken) {
-      unauthorizedWithChallenge(res, authErrorMessage(req));
-      return;
-    }
-
-    const claims = await verifyMcpAccessToken(userToken);
+    // Tool calls always need a per-user identity — the server key is not enough.
+    const claims = auth.claims;
     if (!claims) {
-      unauthorizedWithChallenge(res, 'Invalid or expired MCP access token');
+      unauthorizedWithChallenge(req, res, authErrorMessage(req));
       return;
     }
 

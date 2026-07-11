@@ -47,29 +47,52 @@ describe('remember tool', () => {
     assert.throws(() => tool.parseArguments({ query: 'hi', n: 21 }));
   });
 
-  it('execute passes userId, query, n, scope to dep', async () => {
+  it('execute passes userId, query, n, projectId, scope to dep', async () => {
     let capturedUserId: string | undefined;
     let capturedQuery: string | undefined;
     let capturedN: number | undefined;
+    let capturedProjectId: string | undefined;
     let capturedScope: string | undefined;
 
     const tool = createRememberTool({
-      remember: async (userId, query, n, scope) => {
+      remember: async (userId, query, n, projectId, scope) => {
         capturedUserId = userId;
         capturedQuery = query;
         capturedN = n;
+        capturedProjectId = projectId;
         capturedScope = scope;
         return { ok: true, status: 200, data: [] };
       },
     });
 
-    const args = tool.parseArguments({ query: 'test query', n: 3 });
+    const args = tool.parseArguments({
+      query: 'test query',
+      n: 3,
+      projectId: 'a3bb189e-8bf9-3888-9912-ace4e6543002',
+    });
     await tool.execute({ userId: 'user-3', scope: 'proj-2' }, args);
 
     assert.equal(capturedUserId, 'user-3');
     assert.equal(capturedQuery, 'test query');
     assert.equal(capturedN, 3);
+    assert.equal(capturedProjectId, 'a3bb189e-8bf9-3888-9912-ace4e6543002');
     assert.equal(capturedScope, 'proj-2');
+  });
+
+  it('execute passes undefined projectId when omitted', async () => {
+    let capturedProjectId: string | undefined = 'sentinel';
+
+    const tool = createRememberTool({
+      remember: async (_userId, _query, _n, projectId) => {
+        capturedProjectId = projectId;
+        return { ok: true, status: 200, data: [] };
+      },
+    });
+
+    const args = tool.parseArguments({ query: 'test query' });
+    await tool.execute({ userId: 'user-3' }, args);
+
+    assert.equal(capturedProjectId, undefined);
   });
 
   it('execute returns ok result from dep', async () => {

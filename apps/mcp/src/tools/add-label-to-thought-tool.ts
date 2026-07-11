@@ -4,12 +4,13 @@ import type { ApiResult, ToolDefinition } from './tool-contract.js';
 const schema = z.object({
   thoughtId: z.string().uuid(),
   labelId: z.string().uuid(),
+  projectId: z.string().uuid(),
 });
 
 export interface AddLabelToThoughtDeps {
   addLabelToThought: (
     userId: string,
-    params: { thoughtId: string; labelId: string },
+    params: { thoughtId: string; labelId: string; projectId: string },
     scope?: string,
   ) => Promise<ApiResult>;
 }
@@ -23,8 +24,9 @@ export function createAddLabelToThoughtTool(deps: AddLabelToThoughtDeps): ToolDe
       properties: {
         thoughtId: { type: 'string', format: 'uuid' },
         labelId: { type: 'string', format: 'uuid' },
+        projectId: { type: 'string', format: 'uuid' },
       },
-      required: ['thoughtId', 'labelId'],
+      required: ['thoughtId', 'labelId', 'projectId'],
       additionalProperties: false,
     },
     parseArguments: (args) => schema.parse(args),

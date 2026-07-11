@@ -73,31 +73,31 @@ describe('thought_to_prompt tool', () => {
 
 describe('create_project tool', () => {
   it('parses and executes with expected args', async () => {
-    let captured: { title?: string; body?: string } = {};
+    let captured: { name?: string; emoji?: string } = {};
     const tool = createCreateProjectTool({
-      createProject: async (_userId, title, body) => {
-        captured = { title, body };
+      createProject: async (_userId, name, emoji) => {
+        captured = { name, emoji };
         return okResult;
       },
     });
 
-    const args = tool.parseArguments({ title: 'New Project', body: 'Hello' });
+    const args = tool.parseArguments({ name: 'New Project', emoji: '🧠' });
     await tool.execute({ userId: 'u1' }, args);
 
     assert.equal(tool.name, 'create_project');
-    assert.equal(captured.title, 'New Project');
-    assert.equal(captured.body, 'Hello');
+    assert.equal(captured.name, 'New Project');
+    assert.equal(captured.emoji, '🧠');
   });
 
-  it('rejects empty title', () => {
+  it('rejects empty name', () => {
     const tool = createCreateProjectTool({ createProject: async () => okResult });
-    assert.throws(() => tool.parseArguments({ title: '' }));
+    assert.throws(() => tool.parseArguments({ name: '' }));
   });
 });
 
 describe('list_thoughts tool', () => {
-  it('parses optional filters and executes', async () => {
-    let captured: { parentId?: string; projectId?: string } | undefined;
+  it('parses projectId and executes', async () => {
+    let captured: { projectId?: string } | undefined;
     const tool = createListThoughtsTool({
       listThoughts: async (_userId, params) => {
         captured = params;
@@ -105,63 +105,79 @@ describe('list_thoughts tool', () => {
       },
     });
 
-    const args = tool.parseArguments({ parentId: uuidA, projectId: uuidB });
+    const args = tool.parseArguments({ projectId: uuidB });
     await tool.execute({ userId: 'u1' }, args);
 
     assert.equal(tool.name, 'list_thoughts');
-    assert.equal(captured?.parentId, uuidA);
     assert.equal(captured?.projectId, uuidB);
   });
 
-  it('rejects invalid parentId', () => {
+  it('rejects missing projectId', () => {
     const tool = createListThoughtsTool({ listThoughts: async () => okResult });
-    assert.throws(() => tool.parseArguments({ parentId: 'nope' }));
+    assert.throws(() => tool.parseArguments({}));
+  });
+
+  it('rejects invalid projectId', () => {
+    const tool = createListThoughtsTool({ listThoughts: async () => okResult });
+    assert.throws(() => tool.parseArguments({ projectId: 'nope' }));
   });
 });
 
 describe('create_thought tool', () => {
   it('parses and executes', async () => {
-    let capturedBody: string | undefined;
+    let captured: { body?: string; projectId?: string } = {};
     const tool = createCreateThoughtTool({
       createThought: async (_userId, params) => {
-        capturedBody = params.body;
+        captured = params;
         return okResult;
       },
     });
 
-    const args = tool.parseArguments({ body: 'Some thought', title: 'T', parentId: uuidA });
+    const args = tool.parseArguments({ body: 'Some thought', title: 'T', projectId: uuidA });
     await tool.execute({ userId: 'u1' }, args);
 
     assert.equal(tool.name, 'create_thought');
-    assert.equal(capturedBody, 'Some thought');
+    assert.equal(captured.body, 'Some thought');
+    assert.equal(captured.projectId, uuidA);
   });
 
   it('rejects missing body', () => {
     const tool = createCreateThoughtTool({ createThought: async () => okResult });
-    assert.throws(() => tool.parseArguments({ title: 'x' }));
+    assert.throws(() => tool.parseArguments({ title: 'x', projectId: uuidA }));
+  });
+
+  it('rejects missing projectId', () => {
+    const tool = createCreateThoughtTool({ createThought: async () => okResult });
+    assert.throws(() => tool.parseArguments({ body: 'thought' }));
   });
 });
 
 describe('edit_thought tool', () => {
   it('parses and executes', async () => {
-    let capturedThoughtId: string | undefined;
+    let captured: { thoughtId?: string; body?: string } = {};
     const tool = createEditThoughtTool({
       editThought: async (_userId, params) => {
-        capturedThoughtId = params.thoughtId;
+        captured = params;
         return okResult;
       },
     });
 
-    const args = tool.parseArguments({ thoughtId: uuidA, title: 'Updated' });
+    const args = tool.parseArguments({ thoughtId: uuidA, body: 'Updated body' });
     await tool.execute({ userId: 'u1' }, args);
 
     assert.equal(tool.name, 'edit_thought');
-    assert.equal(capturedThoughtId, uuidA);
+    assert.equal(captured.thoughtId, uuidA);
+    assert.equal(captured.body, 'Updated body');
   });
 
   it('rejects missing thoughtId', () => {
     const tool = createEditThoughtTool({ editThought: async () => okResult });
     assert.throws(() => tool.parseArguments({ body: 'x' }));
+  });
+
+  it('rejects missing body', () => {
+    const tool = createEditThoughtTool({ editThought: async () => okResult });
+    assert.throws(() => tool.parseArguments({ thoughtId: uuidA }));
   });
 });
 
@@ -282,7 +298,7 @@ describe('remove_label tool', () => {
 
 describe('add_label_to_thought tool', () => {
   it('parses and executes', async () => {
-    let captured: { thoughtId?: string; labelId?: string } = {};
+    let captured: { thoughtId?: string; labelId?: string; projectId?: string } = {};
     const tool = createAddLabelToThoughtTool({
       addLabelToThought: async (_userId, params) => {
         captured = params;
@@ -290,17 +306,23 @@ describe('add_label_to_thought tool', () => {
       },
     });
 
-    const args = tool.parseArguments({ thoughtId: uuidA, labelId: uuidB });
+    const args = tool.parseArguments({ thoughtId: uuidA, labelId: uuidB, projectId: uuidA });
     await tool.execute({ userId: 'u1' }, args);
 
     assert.equal(tool.name, 'add_label_to_thought');
     assert.equal(captured.thoughtId, uuidA);
     assert.equal(captured.labelId, uuidB);
+    assert.equal(captured.projectId, uuidA);
+  });
+
+  it('rejects missing projectId', () => {
+    const tool = createAddLabelToThoughtTool({ addLabelToThought: async () => okResult });
+    assert.throws(() => tool.parseArguments({ thoughtId: uuidA, labelId: uuidB }));
   });
 
   it('rejects invalid ids', () => {
     const tool = createAddLabelToThoughtTool({ addLabelToThought: async () => okResult });
-    assert.throws(() => tool.parseArguments({ thoughtId: 'bad', labelId: uuidB }));
+    assert.throws(() => tool.parseArguments({ thoughtId: 'bad', labelId: uuidB, projectId: uuidA }));
   });
 });
 

@@ -4,13 +4,13 @@ import type { ApiResult, ToolDefinition } from './tool-contract.js';
 const schema = z.object({
   body: z.string().min(1),
   title: z.string().optional(),
-  parentId: z.string().uuid().optional(),
+  projectId: z.string().uuid(),
 });
 
 export interface CreateThoughtDeps {
   createThought: (
     userId: string,
-    params: { body: string; title?: string; parentId?: string },
+    params: { body: string; title?: string; projectId: string },
     scope?: string,
   ) => Promise<ApiResult>;
 }
@@ -18,15 +18,15 @@ export interface CreateThoughtDeps {
 export function createCreateThoughtTool(deps: CreateThoughtDeps): ToolDefinition {
   return {
     name: 'create_thought',
-    description: 'Create a new thought',
+    description: 'Create a new thought in a project',
     inputSchema: {
       type: 'object',
       properties: {
         body: { type: 'string' },
         title: { type: 'string' },
-        parentId: { type: 'string', format: 'uuid' },
+        projectId: { type: 'string', format: 'uuid' },
       },
-      required: ['body'],
+      required: ['body', 'projectId'],
       additionalProperties: false,
     },
     parseArguments: (args) => schema.parse(args),

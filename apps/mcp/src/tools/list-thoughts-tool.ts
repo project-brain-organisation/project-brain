@@ -2,14 +2,13 @@ import { z } from 'zod';
 import type { ApiResult, ToolDefinition } from './tool-contract.js';
 
 const schema = z.object({
-  parentId: z.string().uuid().optional(),
-  projectId: z.string().uuid().optional(),
+  projectId: z.string().uuid(),
 });
 
 export interface ListThoughtsDeps {
   listThoughts: (
     userId: string,
-    params: { parentId?: string; projectId?: string },
+    params: { projectId: string },
     scope?: string,
   ) => Promise<ApiResult>;
 }
@@ -17,13 +16,13 @@ export interface ListThoughtsDeps {
 export function createListThoughtsTool(deps: ListThoughtsDeps): ToolDefinition {
   return {
     name: 'list_thoughts',
-    description: 'List thoughts, optionally filtered by parent or project',
+    description: 'List all thoughts in a project',
     inputSchema: {
       type: 'object',
       properties: {
-        parentId: { type: 'string', format: 'uuid' },
         projectId: { type: 'string', format: 'uuid' },
       },
+      required: ['projectId'],
       additionalProperties: false,
     },
     parseArguments: (args) => schema.parse(args),

@@ -66,11 +66,11 @@ export class ApiClient {
     return this.toResult<unknown>(res);
   }
 
-  async createProject(userId: string, title: string, body?: string, scope?: string) {
+  async createProject(userId: string, name: string, emoji?: string, scope?: string) {
     const res = await fetch(`${this.baseUrl}/api/internal/mcp/create-project`, {
       method: 'POST',
       headers: this.headers(userId, scope),
-      body: JSON.stringify({ title, body }),
+      body: JSON.stringify({ name, emoji }),
     });
 
     return this.toResult<unknown>(res);
@@ -78,7 +78,7 @@ export class ApiClient {
 
   async listThoughts(
     userId: string,
-    params: { parentId?: string; projectId?: string },
+    params: { projectId: string },
     scope?: string,
   ) {
     const res = await fetch(`${this.baseUrl}/api/internal/mcp/list-thoughts`, {
@@ -92,7 +92,7 @@ export class ApiClient {
 
   async createThought(
     userId: string,
-    params: { body: string; title?: string; parentId?: string },
+    params: { body: string; title?: string; projectId: string },
     scope?: string,
   ) {
     const res = await fetch(`${this.baseUrl}/api/internal/mcp/create-thought`, {
@@ -106,7 +106,7 @@ export class ApiClient {
 
   async editThought(
     userId: string,
-    params: { thoughtId: string; body?: string; title?: string; parentId?: string },
+    params: { thoughtId: string; body: string },
     scope?: string,
   ) {
     const res = await fetch(`${this.baseUrl}/api/internal/mcp/edit-thought`, {
@@ -146,7 +146,7 @@ export class ApiClient {
     return this.toResult<unknown>(res);
   }
 
-  async listLabels(userId: string, projectId?: string, scope?: string) {
+  async listLabels(userId: string, projectId: string, scope?: string) {
     const res = await fetch(`${this.baseUrl}/api/internal/mcp/list-labels`, {
       method: 'POST',
       headers: this.headers(userId, scope),
@@ -158,7 +158,7 @@ export class ApiClient {
 
   async createLabel(
     userId: string,
-    params: { name: string; color?: string; projectId?: string },
+    params: { name: string; color?: string; projectId: string },
     scope?: string,
   ) {
     const res = await fetch(`${this.baseUrl}/api/internal/mcp/create-label`, {
@@ -196,7 +196,7 @@ export class ApiClient {
 
   async addLabelToThought(
     userId: string,
-    params: { thoughtId: string; labelId: string },
+    params: { thoughtId: string; labelId: string; projectId: string },
     scope?: string,
   ) {
     const res = await fetch(`${this.baseUrl}/api/internal/mcp/add-label-to-thought`, {
@@ -261,11 +261,11 @@ export class ApiClient {
     return this.toResult<unknown>(res);
   }
 
-  async remember(userId: string, query: string, n: number, scope?: string) {
+  async remember(userId: string, query: string, n: number, projectId?: string, scope?: string) {
     const res = await fetch(`${this.baseUrl}/api/internal/mcp/remember`, {
       method: 'POST',
       headers: this.headers(userId, scope),
-      body: JSON.stringify({ query, n }),
+      body: JSON.stringify({ query, n, projectId }),
     });
 
     return this.toResult<unknown>(res);

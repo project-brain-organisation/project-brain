@@ -3,15 +3,13 @@ import type { ApiResult, ToolDefinition } from './tool-contract.js';
 
 const schema = z.object({
   thoughtId: z.string().uuid(),
-  body: z.string().optional(),
-  title: z.string().optional(),
-  parentId: z.string().uuid().optional(),
+  body: z.string().min(1),
 });
 
 export interface EditThoughtDeps {
   editThought: (
     userId: string,
-    params: { thoughtId: string; body?: string; title?: string; parentId?: string },
+    params: { thoughtId: string; body: string },
     scope?: string,
   ) => Promise<ApiResult>;
 }
@@ -19,16 +17,14 @@ export interface EditThoughtDeps {
 export function createEditThoughtTool(deps: EditThoughtDeps): ToolDefinition {
   return {
     name: 'edit_thought',
-    description: 'Update an existing thought',
+    description: 'Replace the body of an existing thought (re-chunks and re-embeds it)',
     inputSchema: {
       type: 'object',
       properties: {
         thoughtId: { type: 'string', format: 'uuid' },
         body: { type: 'string' },
-        title: { type: 'string' },
-        parentId: { type: 'string', format: 'uuid' },
       },
-      required: ['thoughtId'],
+      required: ['thoughtId', 'body'],
       additionalProperties: false,
     },
     parseArguments: (args) => schema.parse(args),
