@@ -3,8 +3,17 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
-import { json, urlencoded, type Request, type Response } from 'express';
+import {
+  json,
+  urlencoded,
+  static as serveStatic,
+  type NextFunction,
+  type Request,
+  type Response,
+} from 'express';
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 function baseUrl(req: Request): string {
   const forwardedProto = req.header('x-forwarded-proto');
@@ -73,6 +82,25 @@ async function bootstrap() {
       scope: typeof body.scope === 'string' ? body.scope : 'mcp:tools',
     });
   });
+
+  // Same-origin SPA hosting: the prod image copies the web build to ../client
+  // (absent in local dev, where vite serves the app on :5173). All API routes
+  // live under /api (global prefix) or /.well-known, so anything else falls
+  // through to the SPA's index.html for client-side routing.
+  const clientDir = join(__dirname, '..', '..', 'client');
+  if (existsSync(clientDir)) {
+    app.use(serveStatic(clientDir));
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (
+        req.method !== 'GET' ||
+        req.path.startsWith('/api') ||
+        req.path.startsWith('/.well-known')
+      ) {
+        return next();
+      }
+      res.sendFile(join(clientDir, 'index.html'));
+    });
+  }
 
   app.setGlobalPrefix('api');
   app.use(cookieParser());

@@ -1,0 +1,31 @@
+# API + web SPA in one image (same-origin: cookies, CORS and SSE need no
+# cross-domain setup). Build context must be the repo root.
+#
+# Railway api service settings:
+#   Root Directory = / (repo root)
+#   Variable RAILWAY_DOCKERFILE_PATH=Dockerfile.api
+
+FROM node:20-slim AS web
+WORKDIR /web
+COPY apps/web/package*.json ./
+RUN npm install
+COPY apps/web ./
+# VITE_API_URL is deliberately unset: the SPA calls relative /api paths on
+# the same origin that served it.
+RUN npm run build
+
+FROM node:20-slim AS api
+WORKDIR /app
+COPY apps/api/package*.json ./
+RUN npm install
+COPY apps/api ./
+RUN npm run build
+
+FROM node:20-slim
+WORKDIR /app
+COPY apps/api/package*.json ./
+RUN npm install --omit=dev
+COPY --from=api /app/dist ./dist
+COPY --from=web /web/dist ./client
+EXPOSE 3000
+CMD ["node", "dist/src/main"]

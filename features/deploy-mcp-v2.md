@@ -30,11 +30,15 @@ anything worth keeping before deleting.
 
 - [ ] Repoint the existing service (or create fresh services) to deploy from
       this repo, branch `main`:
-      - **api**: root directory `apps/api` (Dockerfile build)
+      - **api**: root directory `/` (repo root) with variable
+        `RAILWAY_DOCKERFILE_PATH=Dockerfile.api` — this multi-stage build
+        bakes the web SPA into the API image, which serves it same-origin
+        (no separate web service, no cross-site cookie problems).
       - **mcp**: root directory `apps/mcp` (Dockerfile build)
 - [ ] Public domains on both (Settings → Networking). Note the URLs.
-- [ ] If the web app is also hosted on Railway, keep/point its service at
-      `apps/web` and set `VITE_MCP_URL=https://<mcp-domain>/mcp` at build time.
+- [ ] The web app is served BY the api service at its domain root — the
+      2026-07-12 same-origin decision (see main.ts SPA fallback). Set
+      `FRONTEND_URL` on the api service to the api domain itself.
 
 ## 4. Environment variables
 
