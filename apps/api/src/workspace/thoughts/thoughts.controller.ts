@@ -64,12 +64,12 @@ export class ThoughtsController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(setThoughtColorSchema)) dto: SetThoughtColorRequest,
   ) {
-    return this.thoughtsService.setColor(req.user.userId, id, dto.color);
+    return this.thoughtsService.update(req.user.userId, id, { color: dto.color });
   }
 
   @Delete(':id/color')
   clearColor(@Req() req: any, @Param('id') id: string) {
-    return this.thoughtsService.clearColor(req.user.userId, id);
+    return this.thoughtsService.update(req.user.userId, id, { color: null });
   }
 
   @Delete(':id')

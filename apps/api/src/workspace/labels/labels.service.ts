@@ -41,20 +41,18 @@ export class LabelsService {
       return row;
     });
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'label.created',
+    this.workspaceEvents.emit(userId, 'label.created', {
       source,
       resourceId: label.id,
       projectId: dto.projectId,
-      timestamp: new Date().toISOString(),
     });
 
     return label;
   }
 
   async findByProject(userId: string, projectId: string) {
-    // Ownership isolation enforced by RLS; assertOwnership removed on read path.
+    // Ownership isolation is enforced by RLS — only rows owned by the current
+    // user are visible on this read path.
     return this.db.asUser(userId, async (tx) =>
       tx
         .select()
@@ -64,6 +62,9 @@ export class LabelsService {
   }
 
   async findOne(userId: string, id: string) {
+    // Ownership isolation is enforced by RLS — unauthorized rows are invisible,
+    // so the 404 below covers both missing and cross-tenant ids. Mutators lean
+    // on this by loading through findOne before writing.
     const label = await this.db.asUser(userId, async (tx) => {
       const [row] = await tx
         .select()
@@ -77,23 +78,11 @@ export class LabelsService {
       throw new NotFoundException(`Label ${id} not found`);
     }
 
-    // Ownership isolation enforced by RLS; unauthorized rows invisible.
-
     return label;
   }
 
   async update(userId: string, id: string, dto: UpdateLabelDto, source: 'user' | 'mcp' = 'user') {
-    const label = await this.db.asUser(userId, async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(labels)
-        .where(eq(labels.id, id))
-        .limit(1);
-      return row;
-    });
-
-    if (!label) throw new NotFoundException(`Label ${id} not found`);
-    // Ownership isolation enforced by RLS; assertOwnership removed on update path.
+    const label = await this.findOne(userId, id);
 
     const [updated] = await this.db.asUser(userId, async (tx) =>
       tx
@@ -107,42 +96,26 @@ export class LabelsService {
         .returning(),
     );
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'label.updated',
+    this.workspaceEvents.emit(userId, 'label.updated', {
       source,
       resourceId: id,
       projectId: label.projectId,
-      timestamp: new Date().toISOString(),
     });
 
     return updated;
   }
 
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
-    const label = await this.db.asUser(userId, async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(labels)
-        .where(eq(labels.id, id))
-        .limit(1);
-      return row;
-    });
-
-    if (!label) throw new NotFoundException(`Label ${id} not found`);
-    // Ownership isolation enforced by RLS; assertOwnership removed on delete path.
+    const label = await this.findOne(userId, id);
 
     await this.db.asUser(userId, async (tx) =>
       tx.delete(entities).where(eq(entities.id, id)),
     );
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'label.deleted',
+    this.workspaceEvents.emit(userId, 'label.deleted', {
       source,
       resourceId: id,
       projectId: label.projectId,
-      timestamp: new Date().toISOString(),
     });
 
     return { deleted: true };

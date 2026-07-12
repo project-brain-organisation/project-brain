@@ -25,8 +25,9 @@ import type { WorkspaceEventsService } from '../../../src/workspace/gateway/work
 function makeSelectChain(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {} as Record<string, jest.Mock>;
   chain.from = jest.fn().mockReturnValue(chain);
-  chain.where = jest.fn().mockReturnValue(chain);
   chain.innerJoin = jest.fn().mockReturnValue(chain);
+  // create() loads both endpoints in one inArray select — the query resolves at .where()
+  chain.where = jest.fn().mockResolvedValue(rows);
   chain.limit = jest.fn().mockResolvedValue(rows);
   return chain;
 }
@@ -84,7 +85,7 @@ function makeProjectsService(assertImpl?: () => Promise<void>): ProjectsService 
 }
 
 function makeWorkspaceEventsService(): WorkspaceEventsService {
-  return { publish: jest.fn() } as unknown as WorkspaceEventsService;
+  return { publish: jest.fn(), emit: jest.fn() } as unknown as WorkspaceEventsService;
 }
 
 // ── Entity row factories ───────────────────────────────────────────
@@ -103,7 +104,7 @@ describe('RelationshipsService', () => {
     it('rejects create() when source and target belong to different projects', async () => {
       // source in proj-1, target in proj-2 → cross-project violation
       const db = makeDbService({
-        selectResponses: [[thoughtInProj1], [thoughtInProj2]],
+        selectResponses: [[thoughtInProj1, thoughtInProj2]],
       });
       const projectsService = makeProjectsService();
       const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
@@ -136,7 +137,7 @@ describe('RelationshipsService', () => {
         kind: 'tag' as const,
       },
     ])('$desc', async ({ source, target, kind }) => {
-      const db = makeDbService({ selectResponses: [[source], [target]] });
+      const db = makeDbService({ selectResponses: [[source, target]] });
       const projectsService = makeProjectsService();
       const service = new RelationshipsService(db, projectsService, makeWorkspaceEventsService());
 
@@ -157,7 +158,7 @@ describe('RelationshipsService', () => {
     it('throws ConflictException (not raw DB error) when insert returns code 23505', async () => {
       const pgUniqueErr = Object.assign(new Error('duplicate key value'), { code: '23505' });
       const db = makeDbService({
-        selectResponses: [[thoughtInProj1], [thoughtInProj1b]],
+        selectResponses: [[thoughtInProj1, thoughtInProj1b]],
         insertError: pgUniqueErr,
       });
       const projectsService = makeProjectsService();
@@ -176,7 +177,7 @@ describe('RelationshipsService', () => {
     it('re-throws non-23505 DB errors as-is', async () => {
       const unexpectedErr = new Error('connection refused');
       const db = makeDbService({
-        selectResponses: [[thoughtInProj1], [thoughtInProj1b]],
+        selectResponses: [[thoughtInProj1, thoughtInProj1b]],
         insertError: unexpectedErr,
       });
       const projectsService = makeProjectsService();
@@ -206,7 +207,7 @@ describe('RelationshipsService', () => {
         labelId: null,
       };
       const db = makeDbService({
-        selectResponses: [[thoughtInProj1], [thoughtInProj1b]],
+        selectResponses: [[thoughtInProj1, thoughtInProj1b]],
         insertRows: [newRel],
       });
       const projectsService = makeProjectsService();
@@ -250,12 +251,10 @@ describe('RelationshipsService', () => {
         }),
       } as unknown as ProjectsService;
 
-      let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
-          callOrder.push(`select:${selectCallCount++}`);
-          const rows = selectCallCount === 1 ? [thoughtInProj1] : [thoughtInProj1b];
-          return makeSelectChain(rows);
+          callOrder.push('select');
+          return makeSelectChain([thoughtInProj1, thoughtInProj1b]);
         }),
         insert: jest.fn().mockReturnValue(makeInsertChain([{ id: 'rel-uuid' }])),
         delete: jest.fn().mockReturnValue(makeDeleteChain()),

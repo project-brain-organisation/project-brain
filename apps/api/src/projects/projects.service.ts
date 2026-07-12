@@ -41,13 +41,10 @@ export class ProjectsService {
       return row;
     });
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'project.created',
+    this.workspaceEvents.emit(userId, 'project.created', {
       source,
       resourceId: meta.id,
       projectId: meta.id,
-      timestamp: new Date().toISOString(),
     });
 
     return meta;
@@ -87,13 +84,10 @@ export class ProjectsService {
         .returning(),
     );
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'project.updated',
+    this.workspaceEvents.emit(userId, 'project.updated', {
       source,
       resourceId: projectId,
       projectId,
-      timestamp: new Date().toISOString(),
     });
 
     return updated;
@@ -105,13 +99,10 @@ export class ProjectsService {
       tx.delete(entities).where(eq(entities.id, projectId)),
     );
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'project.deleted',
+    this.workspaceEvents.emit(userId, 'project.deleted', {
       source,
       resourceId: projectId,
       projectId,
-      timestamp: new Date().toISOString(),
     });
 
     return { deleted: true };

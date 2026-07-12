@@ -31,6 +31,21 @@ export class WorkspaceEventsService implements OnModuleDestroy {
     this.bus.next({ userId, event });
   }
 
+  // Convenience over publish(): fills in the mechanical eventId/timestamp so
+  // call sites only state what actually varies.
+  emit(
+    userId: string,
+    type: string,
+    event: { source: 'user' | 'mcp'; resourceId: string; projectId?: string },
+  ) {
+    this.publish(userId, {
+      ...event,
+      type,
+      eventId: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   streamForUser(userId: string): Observable<SseMessage> {
     this.activeStreams.set(userId, (this.activeStreams.get(userId) ?? 0) + 1);
 

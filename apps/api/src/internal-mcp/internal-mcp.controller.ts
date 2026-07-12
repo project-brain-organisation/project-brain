@@ -88,7 +88,7 @@ export class InternalMcpController {
     @Body() body: { thoughtId: string; body: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    return this.thoughtsService.updateBody(userId, body.thoughtId, body.body, 'mcp');
+    return this.thoughtsService.update(userId, body.thoughtId, { body: body.body }, 'mcp');
   }
 
   @Post('remove-thought')
@@ -381,12 +381,12 @@ export class InternalMcpController {
     @Body() body: { thoughtId: string; hex: string },
   ) {
     const userId = this.userIdFromHeaders(req);
-    return this.thoughtsService.setColor(userId, body.thoughtId, body.hex, 'mcp');
+    return this.thoughtsService.update(userId, body.thoughtId, { color: body.hex }, 'mcp');
   }
 
   @Post('clear-thought-color')
   clearThoughtColor(@Req() req: Request, @Body() body: { thoughtId: string }) {
     const userId = this.userIdFromHeaders(req);
-    return this.thoughtsService.clearColor(userId, body.thoughtId, 'mcp');
+    return this.thoughtsService.update(userId, body.thoughtId, { color: null }, 'mcp');
   }
 }

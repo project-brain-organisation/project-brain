@@ -4,12 +4,29 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { ProjectsService } from '../../projects/projects.service';
 import { WorkspaceEventsService } from '../gateway/workspace-events.service';
 import { entities, relationships } from '../../database/schema/index';
 import { CreateRelationshipDto } from './dto/create-relationship.dto';
+
+// Endpoint-type rules per relationship kind. 'edge' is deliberately absent —
+// it places no restriction on its endpoints.
+const endpointRules: Partial<
+  Record<CreateRelationshipDto['kind'], { source: string; target: string; error: string }>
+> = {
+  hierarchy: {
+    source: 'thought',
+    target: 'thought',
+    error: 'hierarchy relationships require thought/thought endpoints',
+  },
+  tag: {
+    source: 'thought',
+    target: 'label',
+    error: 'tag relationships require thought→label',
+  },
+};
 
 @Injectable()
 export class RelationshipsService {
@@ -23,24 +40,17 @@ export class RelationshipsService {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
     return this.db.asUser(userId, async (tx) => {
-      // Load source entity
-      const [sourceEntity] = await tx
+      const endpoints = await tx
         .select()
         .from(entities)
-        .where(eq(entities.id, dto.sourceId))
-        .limit(1);
+        .where(inArray(entities.id, [dto.sourceId, dto.targetId]));
+
+      const sourceEntity = endpoints.find((e) => e.id === dto.sourceId);
+      const targetEntity = endpoints.find((e) => e.id === dto.targetId);
 
       if (!sourceEntity) {
         throw new NotFoundException(`Entity ${dto.sourceId} not found`);
       }
-
-      // Load target entity
-      const [targetEntity] = await tx
-        .select()
-        .from(entities)
-        .where(eq(entities.id, dto.targetId))
-        .limit(1);
-
       if (!targetEntity) {
         throw new NotFoundException(`Entity ${dto.targetId} not found`);
       }
@@ -50,17 +60,10 @@ export class RelationshipsService {
         throw new BadRequestException('Cross-project relationships are not allowed');
       }
 
-      // Per-kind endpoint-type validation
-      if (dto.kind === 'hierarchy') {
-        if (sourceEntity.type !== 'thought' || targetEntity.type !== 'thought') {
-          throw new BadRequestException('hierarchy relationships require thought/thought endpoints');
-        }
-      } else if (dto.kind === 'tag') {
-        if (sourceEntity.type !== 'thought' || targetEntity.type !== 'label') {
-          throw new BadRequestException('tag relationships require thought→label');
-        }
+      const rule = endpointRules[dto.kind];
+      if (rule && (sourceEntity.type !== rule.source || targetEntity.type !== rule.target)) {
+        throw new BadRequestException(rule.error);
       }
-      // edge: no type restriction
 
       try {
         const [relationship] = await tx
@@ -75,13 +78,10 @@ export class RelationshipsService {
           })
           .returning();
 
-        this.workspaceEvents.publish(userId, {
-          eventId: crypto.randomUUID(),
-          type: 'relationship.created',
+        this.workspaceEvents.emit(userId, 'relationship.created', {
           source,
           resourceId: relationship.id,
           projectId: dto.projectId,
-          timestamp: new Date().toISOString(),
         });
 
         return relationship;
@@ -169,13 +169,10 @@ export class RelationshipsService {
       tx.delete(relationships).where(eq(relationships.id, id)),
     );
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'relationship.deleted',
+    this.workspaceEvents.emit(userId, 'relationship.deleted', {
       source,
       resourceId: id,
       projectId: relationship.projectId,
-      timestamp: new Date().toISOString(),
     });
 
     return { deleted: true };

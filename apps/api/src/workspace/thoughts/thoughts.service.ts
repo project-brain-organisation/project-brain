@@ -48,13 +48,10 @@ export class ThoughtsService {
       return row;
     });
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'thought.created',
+    this.workspaceEvents.emit(userId, 'thought.created', {
       source,
       resourceId: thought.id,
       projectId: dto.projectId,
-      timestamp: new Date().toISOString(),
     });
 
     // Fire-and-forget chunk+embed scoped to the owning project (async/background).
@@ -69,57 +66,13 @@ export class ThoughtsService {
     return thought;
   }
 
-  async updateBody(userId: string, id: string, body: string, source: 'user' | 'mcp' = 'user') {
-    const thought = await this.db.asUser(userId, async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(thoughts)
-        .where(eq(thoughts.id, id))
-        .limit(1);
-      return row;
-    });
-
-    if (!thought) {
-      throw new NotFoundException(`Thought ${id} not found`);
-    }
-
-    // Ownership isolation is enforced by RLS (using clause on thoughts table).
-    // assertOwnership removed — RLS makes unauthorized rows invisible, so
-    // the NotFoundException above fires for both missing and unauthorized rows.
-
-    const [updated] = await this.db.asUser(userId, async (tx) =>
-      tx
-        .update(thoughts)
-        .set({ body })
-        .where(eq(thoughts.id, id))
-        .returning(),
-    );
-
-    // Re-chunk + re-embed on body edit (async/background, project-scoped).
-    this.pipelineService
-      .rechunk(thought.projectId, id, body, userId)
-      .catch((err) =>
-        this.logger.warn(`Re-chunk/embed failed for thought ${id}: ${err.message}`),
-      );
-
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'thought.updated',
-      source,
-      resourceId: id,
-      projectId: thought.projectId,
-      timestamp: new Date().toISOString(),
-    });
-
-    return updated;
-  }
-
   async update(
     userId: string,
     id: string,
     patch: {
       body?: string;
       title?: string;
+      color?: string | null;
       canvasX?: number | null;
       canvasY?: number | null;
       width?: number | null;
@@ -127,20 +80,7 @@ export class ThoughtsService {
     },
     source: 'user' | 'mcp' = 'user',
   ) {
-    const thought = await this.db.asUser(userId, async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(thoughts)
-        .where(eq(thoughts.id, id))
-        .limit(1);
-      return row;
-    });
-
-    if (!thought) {
-      throw new NotFoundException(`Thought ${id} not found`);
-    }
-
-    // Ownership isolation is enforced by RLS (using clause on thoughts table).
+    const thought = await this.findOne(userId, id);
 
     const [updated] = await this.db.asUser(userId, async (tx) =>
       tx
@@ -148,6 +88,7 @@ export class ThoughtsService {
         .set({
           ...(patch.body !== undefined && { body: patch.body }),
           ...(patch.title !== undefined && { title: patch.title }),
+          ...(patch.color !== undefined && { color: patch.color }),
           ...(patch.canvasX !== undefined && { canvasX: patch.canvasX }),
           ...(patch.canvasY !== undefined && { canvasY: patch.canvasY }),
           ...(patch.width !== undefined && { width: patch.width }),
@@ -166,13 +107,10 @@ export class ThoughtsService {
         );
     }
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'thought.updated',
+    this.workspaceEvents.emit(userId, 'thought.updated', {
       source,
       resourceId: id,
       projectId: thought.projectId,
-      timestamp: new Date().toISOString(),
     });
 
     return updated;
@@ -184,7 +122,7 @@ export class ThoughtsService {
 
   async findByProject(userId: string, projectId: string) {
     // Ownership isolation is enforced by RLS — only rows owned by the current
-    // user are visible; assertOwnership removed (redundant on this read path).
+    // user are visible on this read path.
     return this.db.asUser(userId, async (tx) =>
       tx
         .select()
@@ -194,6 +132,9 @@ export class ThoughtsService {
   }
 
   async findOne(userId: string, id: string) {
+    // Ownership isolation is enforced by RLS — unauthorized rows are invisible,
+    // so the 404 below covers both missing and cross-tenant ids. Mutators lean
+    // on this by loading through findOne before writing.
     const thought = await this.db.asUser(userId, async (tx) => {
       const [row] = await tx
         .select()
@@ -206,106 +147,21 @@ export class ThoughtsService {
     if (!thought) {
       throw new NotFoundException(`Thought ${id} not found`);
     }
-
-    // Ownership isolation is enforced by RLS — unauthorized rows are not visible,
-    // so NotFoundException above covers both missing and cross-tenant access.
 
     return thought;
   }
 
-  async setColor(userId: string, id: string, color: string, source: 'user' | 'mcp' = 'user') {
-    const thought = await this.db.asUser(userId, async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(thoughts)
-        .where(eq(thoughts.id, id))
-        .limit(1);
-      return row;
-    });
-
-    if (!thought) throw new NotFoundException(`Thought ${id} not found`);
-    // RLS using clause makes unauthorized rows invisible; assertOwnership removed.
-
-    const [updated] = await this.db.asUser(userId, async (tx) =>
-      tx
-        .update(thoughts)
-        .set({ color })
-        .where(eq(thoughts.id, id))
-        .returning(),
-    );
-
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'thought.updated',
-      source,
-      resourceId: id,
-      projectId: thought.projectId,
-      timestamp: new Date().toISOString(),
-    });
-
-    return updated;
-  }
-
-  async clearColor(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
-    const thought = await this.db.asUser(userId, async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(thoughts)
-        .where(eq(thoughts.id, id))
-        .limit(1);
-      return row;
-    });
-
-    if (!thought) throw new NotFoundException(`Thought ${id} not found`);
-    // RLS using clause makes unauthorized rows invisible; assertOwnership removed.
-
-    const [updated] = await this.db.asUser(userId, async (tx) =>
-      tx
-        .update(thoughts)
-        .set({ color: null })
-        .where(eq(thoughts.id, id))
-        .returning(),
-    );
-
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'thought.updated',
-      source,
-      resourceId: id,
-      projectId: thought.projectId,
-      timestamp: new Date().toISOString(),
-    });
-
-    return updated;
-  }
-
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
-    const thought = await this.db.asUser(userId, async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(thoughts)
-        .where(eq(thoughts.id, id))
-        .limit(1);
-      return row;
-    });
-
-    if (!thought) {
-      throw new NotFoundException(`Thought ${id} not found`);
-    }
-
-    // RLS using clause makes unauthorized rows invisible; assertOwnership removed.
+    const thought = await this.findOne(userId, id);
 
     await this.db.asUser(userId, async (tx) =>
       tx.delete(entities).where(eq(entities.id, id)),
     );
 
-    this.workspaceEvents.publish(userId, {
-      eventId: crypto.randomUUID(),
-      type: 'thought.deleted',
+    this.workspaceEvents.emit(userId, 'thought.deleted', {
       source,
       resourceId: id,
       projectId: thought.projectId,
-      timestamp: new Date().toISOString(),
     });
 
     return { deleted: true };

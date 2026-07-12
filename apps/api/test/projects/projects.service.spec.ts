@@ -18,7 +18,7 @@ import type { DatabaseService } from '../../src/database/database.service';
 import type { WorkspaceEventsService } from '../../src/workspace/gateway/workspace-events.service';
 
 function makeWorkspaceEventsService() {
-  return { publish: jest.fn() } as unknown as WorkspaceEventsService;
+  return { publish: jest.fn(), emit: jest.fn() } as unknown as WorkspaceEventsService;
 }
 
 // ── Fluent Drizzle tx mock helpers ─────────────────────────────────

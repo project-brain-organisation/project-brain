@@ -98,7 +98,7 @@ function makeProjectsServiceMock(opts: { throwOnAssert?: boolean } = {}) {
 }
 
 function makeWorkspaceEventsService(): WorkspaceEventsService {
-  return { publish: jest.fn() } as unknown as WorkspaceEventsService;
+  return { publish: jest.fn(), emit: jest.fn() } as unknown as WorkspaceEventsService;
 }
 
 /**

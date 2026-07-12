@@ -9,8 +9,8 @@
  *   B2: create() runs asUser inserting paired entities + thoughts rows,
  *       with thoughts row carrying projectId = dto.projectId
  *   B3: findByProject() filters on thoughts.projectId — no innerJoin on entities
- *   B4: by-id methods (setColor, clearColor, remove, updateBody) resolve scope
- *       from the thought row directly (no entities query first)
+ *   B4: by-id methods (update, remove) resolve scope from the thought row
+ *       directly (no entities query first)
  *   B5: assertOwnership receives the thought's project_id on by-id mutations
  *   B6: NotFoundException thrown when thought row is missing (not entity row)
  *
@@ -36,7 +36,7 @@ function makePipelineService(): PipelineService {
 }
 
 function makeWorkspaceEventsService(): WorkspaceEventsService {
-  return { publish: jest.fn() } as unknown as WorkspaceEventsService;
+  return { publish: jest.fn(), emit: jest.fn() } as unknown as WorkspaceEventsService;
 }
 
 // ── Fluent Drizzle tx mock helpers ─────────────────────────────────
@@ -264,10 +264,10 @@ describe('WorkspaceThoughtsService', () => {
 
   // ── B4 + B5: by-id methods read scope from thought row ──────────
 
-  describe('setColor', () => {
+  describe('update — color patch', () => {
     // bypass: fallback — Jest example-based test; fast-check not installed in this workspace
     it('resolves scope from thought row — no entities query first (AC3)', async () => {
-      // setColor does two asUser calls: one select, one update
+      // update does two asUser calls: one select, one update
       const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: null };
       const updatedRow = { ...thoughtRow, color: '#ff0000' };
 
@@ -291,16 +291,16 @@ describe('WorkspaceThoughtsService', () => {
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
-      const result = await service.setColor('user-1', 'thought-1', '#ff0000');
+      const result = await service.update('user-1', 'thought-1', { color: '#ff0000' });
 
       // AC3: two asUser calls (select + update), not entities-then-thoughts N+1
       expect(asUserCallCount).toBe(2);
-      // Step 04-01: assertOwnership removed from setColor path (RLS enforces isolation).
+      // Step 04-01: assertOwnership removed from the color-update path (RLS enforces isolation).
       expect(projectsService.assertOwnership).not.toHaveBeenCalled();
       expect(result).toMatchObject({ color: '#ff0000' });
     });
 
-    it('clears thoughts.color to null when clearColor is called', async () => {
+    it('clears thoughts.color when patched with color: null', async () => {
       const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: '#ff0000' };
       const updatedRow = { ...thoughtRow, color: null };
 
@@ -319,7 +319,7 @@ describe('WorkspaceThoughtsService', () => {
       const projectsService = makeProjectsService();
       const service = new ThoughtsService(dbService, projectsService, makePipelineService(), makeWorkspaceEventsService());
 
-      const result = await service.clearColor('user-1', 'thought-1');
+      const result = await service.update('user-1', 'thought-1', { color: null });
 
       expect(result).toMatchObject({ color: null });
     });
