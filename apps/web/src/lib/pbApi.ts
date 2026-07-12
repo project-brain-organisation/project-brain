@@ -19,6 +19,7 @@ export interface Project {
   ownerId: string;
   name: string;
   emoji: string | null;
+  color: string | null;
   isPublic: boolean;
 }
 
@@ -66,7 +67,7 @@ export const projectsApi = {
   get: (id: string) => api.get<Project>(`/api/projects/${id}`),
   create: (data: { name: string; emoji?: string; isPublic?: boolean }) =>
     api.post<Project>('/api/projects', data),
-  update: (id: string, data: Partial<{ name: string; emoji: string; isPublic: boolean }>) =>
+  update: (id: string, data: Partial<{ name: string; emoji: string; isPublic: boolean; color: string | null }>) =>
     api.patch<Project>(`/api/projects/${id}`, data),
   remove: (id: string) => api.delete<{ deleted: boolean }>(`/api/projects/${id}`),
 };

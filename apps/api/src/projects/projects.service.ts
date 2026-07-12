@@ -70,7 +70,7 @@ export class ProjectsService {
   async update(
     userId: string,
     projectId: string,
-    data: Partial<{ name: string; emoji: string; isPublic: boolean }>,
+    data: Partial<{ name: string; emoji: string; isPublic: boolean; color: string | null }>,
     source: 'user' | 'mcp' = 'user',
   ) {
     await this.assertOwnership(userId, projectId);
@@ -81,6 +81,7 @@ export class ProjectsService {
           ...(data.name !== undefined && { name: data.name }),
           ...(data.emoji !== undefined && { emoji: data.emoji }),
           ...(data.isPublic !== undefined && { isPublic: data.isPublic }),
+          ...(data.color !== undefined && { color: data.color }),
         })
         .where(eq(projectMeta.id, projectId))
         .returning(),

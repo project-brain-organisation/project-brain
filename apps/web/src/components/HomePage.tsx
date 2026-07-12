@@ -10,7 +10,7 @@ const DEFAULT_NODE_COLOR = '#e8a838';
 
 /** Present the selected project as a root pseudo-thought so the list/graph
  *  components can treat it like any other node. */
-function projectToRootNode(project: { id: string; name: string }): Thought {
+function projectToRootNode(project: { id: string; name: string; color: string | null }): Thought {
   return {
     id: project.id,
     projectId: project.id,
@@ -18,7 +18,7 @@ function projectToRootNode(project: { id: string; name: string }): Thought {
     isRoot: true,
     title: project.name,
     body: '',
-    color: null,
+    color: project.color,
     contentHash: null,
     canvasX: null,
     canvasY: null,
@@ -33,7 +33,7 @@ function projectToRootNode(project: { id: string; name: string }): Thought {
 
 export function HomePage() {
   const { selectedRootId, setSelectedRootId } = useSelectedRoot();
-  const { projects, loading: projectsLoading, createProject, renameProject } = useProjects();
+  const { projects, loading: projectsLoading, createProject, renameProject, setProjectColor } = useProjects();
   const { thoughts, loading, createThought, updateThought, setThoughtColor, removeThought } = useThoughts(selectedRootId);
   const [creating, setCreating] = useState(false);
   const [projectName, setProjectName] = useState('');
@@ -95,21 +95,25 @@ export function HomePage() {
     updateThought(id, data);
   }, [selectedRootId, renameProject, updateThought]);
 
-  // Node colors come straight off the thought rows
+  // Node colors come off the thought rows; the root's off the project itself
   const nodeColors = useMemo(() => {
     const map: Record<string, string> = {};
     for (const t of thoughts) {
       if (t.color) map[t.id] = t.color;
     }
+    if (selectedProject?.color) map[selectedProject.id] = selectedProject.color;
     return map;
-  }, [thoughts]);
+  }, [thoughts, selectedProject]);
 
   const handleColorChange = useCallback((color: string) => {
-    // Color persists on thoughts only; the project root keeps the default.
-    if (activeNodeId && activeNodeId !== selectedRootId) {
+    if (!activeNodeId) return;
+    if (activeNodeId === selectedRootId) {
+      // The root pseudo-node is the project itself
+      setProjectColor(activeNodeId, color);
+    } else {
       setThoughtColor(activeNodeId, color);
     }
-  }, [activeNodeId, selectedRootId, setThoughtColor]);
+  }, [activeNodeId, selectedRootId, setProjectColor, setThoughtColor]);
 
   const activeNode = activeNodeId === selectedRootId
     ? rootNode

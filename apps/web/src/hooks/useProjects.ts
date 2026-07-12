@@ -42,11 +42,19 @@ export function useProjects() {
     return project;
   }, []);
 
+  const setProjectColor = useCallback(async (id: string, color: string) => {
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, color } : p)));
+    const project = await projectsApi.update(id, { color });
+    setProjects((prev) => prev.map((p) => (p.id === id ? project : p)));
+    notifyThoughtsChanged();
+    return project;
+  }, []);
+
   const removeProject = useCallback(async (id: string) => {
     await projectsApi.remove(id);
     setProjects((prev) => prev.filter((p) => p.id !== id));
     notifyThoughtsChanged();
   }, []);
 
-  return { projects, loading, createProject, renameProject, removeProject, refresh: fetchProjects };
+  return { projects, loading, createProject, renameProject, setProjectColor, removeProject, refresh: fetchProjects };
 }

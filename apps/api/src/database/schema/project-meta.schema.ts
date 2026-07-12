@@ -23,6 +23,8 @@ export const projectMeta = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 255 }).notNull(),
     emoji: varchar('emoji', { length: 16 }),
+    // Root-node color in the graph; inline varchar(7) hex like thoughts.color
+    color: varchar('color', { length: 7 }),
     isPublic: boolean('is_public').notNull().default(false),
   },
   (t) => [
