@@ -1,42 +1,42 @@
 import { useState } from 'react';
-import type { Thought } from '../hooks/useThoughts';
+import type { Project } from '../lib/pbApi';
 import './Sidebar.css';
 
 interface Props {
   username: string;
   onLogout: () => void;
-  roots: Thought[];
-  selectedRootId?: string;
-  onSelectRoot?: (id: string) => void;
-  onCreateRoot: () => Promise<Thought>;
-  onDeleteRoot: (id: string) => void;
+  projects: Project[];
+  selectedProjectId?: string;
+  onSelectProject?: (id: string) => void;
+  onCreateProject: () => Promise<Project>;
+  onDeleteProject: (id: string) => void;
   onMcpOpen: () => void;
 }
 
 export function Sidebar({
   username,
   onLogout,
-  roots,
-  selectedRootId,
-  onSelectRoot,
-  onCreateRoot,
-  onDeleteRoot,
+  projects,
+  selectedProjectId,
+  onSelectProject,
+  onCreateProject,
+  onDeleteProject,
   onMcpOpen,
 }: Props) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmName, setConfirmName] = useState('');
 
-  const confirmTarget = confirmDeleteId ? roots.find((r) => r.id === confirmDeleteId) : null;
-  const nameMatches = confirmTarget && confirmName.trim().toLowerCase() === (confirmTarget.title || '').trim().toLowerCase();
+  const confirmTarget = confirmDeleteId ? projects.find((p) => p.id === confirmDeleteId) : null;
+  const nameMatches = confirmTarget && confirmName.trim().toLowerCase() === confirmTarget.name.trim().toLowerCase();
 
   const handleCreate = async () => {
-    const project = await onCreateRoot();
-    onSelectRoot?.(project.id);
+    const project = await onCreateProject();
+    onSelectProject?.(project.id);
   };
 
   const handleConfirmDelete = () => {
     if (!confirmDeleteId || !nameMatches) return;
-    onDeleteRoot(confirmDeleteId);
+    onDeleteProject(confirmDeleteId);
     setConfirmDeleteId(null);
     setConfirmName('');
   };
@@ -51,31 +51,31 @@ export function Sidebar({
             PROJECTS
             <button className="sidebar-add-btn" onClick={handleCreate}>+</button>
           </div>
-          {roots.map((root) => (
-            <div key={root.id} className="sidebar-project-row">
+          {projects.map((project) => (
+            <div key={project.id} className="sidebar-project-row">
               <button
-                className={`sidebar-project-btn ${root.id === selectedRootId ? 'active' : ''}`}
-                onClick={() => onSelectRoot?.(root.id)}
+                className={`sidebar-project-btn ${project.id === selectedProjectId ? 'active' : ''}`}
+                onClick={() => onSelectProject?.(project.id)}
               >
-                {root.title || root.body.slice(0, 30) || '(untitled)'}
+                {project.emoji ? `${project.emoji} ` : ''}{project.name || '(untitled)'}
               </button>
               <button
                 className="sidebar-project-delete"
-                onClick={() => { setConfirmDeleteId(root.id); setConfirmName(''); }}
+                onClick={() => { setConfirmDeleteId(project.id); setConfirmName(''); }}
                 title="Delete project"
               >
                 &times;
               </button>
             </div>
           ))}
-          {roots.length === 0 && <div className="sidebar-empty">No projects yet</div>}
+          {projects.length === 0 && <div className="sidebar-empty">No projects yet</div>}
         </div>
       </div>
 
       {confirmDeleteId && confirmTarget && (
         <div className="sidebar-delete-confirm">
           <p className="sidebar-delete-confirm-text">
-            Type <strong>{confirmTarget.title || '(untitled)'}</strong> to delete
+            Type <strong>{confirmTarget.name || '(untitled)'}</strong> to delete
           </p>
           <input
             className="sidebar-delete-confirm-input"

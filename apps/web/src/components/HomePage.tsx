@@ -1,35 +1,63 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
-import { useThoughts } from '../hooks/useThoughts';
-import { useNodeColors } from '../hooks/useNodeColors';
+import { useThoughts, type Thought } from '../hooks/useThoughts';
+import { useProjects } from '../hooks/useProjects';
 import { useSelectedRoot } from '../contexts/SelectedRootContext';
 import { NetworkView } from './NetworkView';
 import { ThoughtsList } from './ThoughtsList';
 import './HomePage.css';
 
+const DEFAULT_NODE_COLOR = '#e8a838';
+
+/** Present the selected project as a root pseudo-thought so the list/graph
+ *  components can treat it like any other node. */
+function projectToRootNode(project: { id: string; name: string }): Thought {
+  return {
+    id: project.id,
+    projectId: project.id,
+    parentId: null,
+    isRoot: true,
+    title: project.name,
+    body: '',
+    color: null,
+    contentHash: null,
+    canvasX: null,
+    canvasY: null,
+    width: null,
+    height: null,
+    createdAt: '',
+    updatedAt: '',
+    edgeLabels: [],
+    parentRelationshipId: null,
+  };
+}
+
 export function HomePage() {
   const { selectedRootId, setSelectedRootId } = useSelectedRoot();
-  const { roots, thoughts, loading, createThought, createRoot, updateThought, removeThought } = useThoughts(selectedRootId);
+  const { projects, loading: projectsLoading, createProject, renameProject } = useProjects();
+  const { thoughts, loading, createThought, updateThought, setThoughtColor, removeThought } = useThoughts(selectedRootId);
   const [creating, setCreating] = useState(false);
   const [projectName, setProjectName] = useState('');
-  const { nodeColors, setColor } = useNodeColors();
   // focusedNodeId drills into a child node within the selected project
   const [focusedNodeId, setFocusedNodeId] = useState<string | undefined>(undefined);
 
-  // Auto-select the most recently edited project on first load
+  // Auto-select the first project on first load
   const hasAutoSelected = useRef(false);
-  if (!hasAutoSelected.current && !loading && !selectedRootId && roots.length > 0) {
+  if (!hasAutoSelected.current && !projectsLoading && !selectedRootId && projects.length > 0) {
     hasAutoSelected.current = true;
-    setSelectedRootId(roots[0].id);
+    setSelectedRootId(projects[0].id);
   }
+
+  const selectedProject = projects.find((p) => p.id === selectedRootId);
+  const rootNode = selectedProject ? projectToRootNode(selectedProject) : undefined;
 
   const handleCreateProject = useCallback(async () => {
     const trimmed = projectName.trim();
     if (!trimmed) return;
-    const project = await createRoot(trimmed);
+    const project = await createProject(trimmed);
     setProjectName('');
     setCreating(false);
     setSelectedRootId(project.id);
-  }, [projectName, createRoot, setSelectedRootId]);
+  }, [projectName, createProject, setSelectedRootId]);
 
   // Background click resets to project root view (not deselecting the project)
   const handleResetView = useCallback(() => {
@@ -38,8 +66,12 @@ export function HomePage() {
 
   // Node click drills into that node
   const handleSelectNode = useCallback((id: string) => {
+    if (id === selectedRootId) {
+      setFocusedNodeId(undefined);
+      return;
+    }
     setFocusedNodeId(id);
-  }, []);
+  }, [selectedRootId]);
 
   // The active node: focused child, or the project root
   const activeNodeId = focusedNodeId || selectedRootId;
@@ -51,14 +83,37 @@ export function HomePage() {
   }, [activeNodeId, createThought]);
 
   const handleUpdateThought = useCallback((id: string, title?: string, body?: string) => {
-    const data: any = {};
+    if (id === selectedRootId) {
+      // The root pseudo-node is the project itself: title = project name,
+      // and it has no body to persist.
+      if (title !== undefined) renameProject(id, title);
+      return;
+    }
+    const data: { title?: string; body?: string } = {};
     if (title !== undefined) data.title = title;
     if (body !== undefined) data.body = body;
     updateThought(id, data);
-  }, [updateThought]);
+  }, [selectedRootId, renameProject, updateThought]);
 
-  const activeNode = roots.find((r) => r.id === activeNodeId)
-    || thoughts.find((t) => t.id === activeNodeId);
+  // Node colors come straight off the thought rows
+  const nodeColors = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const t of thoughts) {
+      if (t.color) map[t.id] = t.color;
+    }
+    return map;
+  }, [thoughts]);
+
+  const handleColorChange = useCallback((color: string) => {
+    // Color persists on thoughts only; the project root keeps the default.
+    if (activeNodeId && activeNodeId !== selectedRootId) {
+      setThoughtColor(activeNodeId, color);
+    }
+  }, [activeNodeId, selectedRootId, setThoughtColor]);
+
+  const activeNode = activeNodeId === selectedRootId
+    ? rootNode
+    : thoughts.find((t) => t.id === activeNodeId);
 
   const visibleThoughts = useMemo(() => {
     if (!selectedRootId) {
@@ -69,22 +124,20 @@ export function HomePage() {
       return thoughts.filter((t) => t.parentId === focusedNodeId);
     }
     // Project root view: show all thoughts in the project
-    return thoughts.filter((t) => !t.isRoot);
+    return thoughts;
   }, [thoughts, selectedRootId, focusedNodeId]);
 
-  // Graph shows the active node + visible thoughts
+  // Graph shows the active node + visible thoughts. Top-level thoughts hang
+  // off the project root, so substitute the project id for null parents.
   const networkThoughts = useMemo(() => {
     if (!activeNode) return [];
-    return [activeNode, ...visibleThoughts];
-  }, [activeNode, visibleThoughts]);
+    const withParents = visibleThoughts.map((t) =>
+      t.parentId ? t : { ...t, parentId: selectedRootId ?? null },
+    );
+    return [activeNode, ...withParents];
+  }, [activeNode, visibleThoughts, selectedRootId]);
 
-  // Clear focused node when project changes
-  const handleProjectSelect = useCallback((id: string | undefined) => {
-    setFocusedNodeId(undefined);
-    setSelectedRootId(id);
-  }, [setSelectedRootId]);
-
-  if (loading) {
+  if (loading || projectsLoading) {
     return <div className="home-page-loading">Loading...</div>;
   }
 
@@ -124,10 +177,8 @@ export function HomePage() {
         <ThoughtsList
           thoughts={visibleThoughts}
           activeNode={activeNode}
-          nodeBorderColor={activeNodeId ? nodeColors[activeNodeId] ?? '#e8a838' : '#e8a838'}
-          onNodeBorderColorChange={(color) => {
-            if (activeNodeId) setColor(activeNodeId, color);
-          }}
+          nodeBorderColor={(activeNodeId && nodeColors[activeNodeId]) || DEFAULT_NODE_COLOR}
+          onNodeBorderColorChange={handleColorChange}
           onCreateThought={handleCreateThought}
           onUpdateThought={handleUpdateThought}
           onDeleteThought={removeThought}

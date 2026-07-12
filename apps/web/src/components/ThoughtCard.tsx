@@ -14,6 +14,9 @@ interface Props {
 }
 
 function formatTime(iso: string): string {
+  // v2 thoughts don't carry a creation timestamp (it lives on entities);
+  // render nothing rather than "Invalid Date".
+  if (!iso) return '';
   const d = new Date(iso);
   const day   = String(d.getDate()).padStart(2, '0');
   const month = d.toLocaleString('en-GB', { month: 'short' });
@@ -22,7 +25,7 @@ function formatTime(iso: string): string {
 }
 
 export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocusBody }: Props) {
-  const { thoughtLabels, assignLabel, unassignLabel, refresh } = useThoughtLabels(thought.id);
+  const { thoughtLabels, assignLabel, unassignLabel, refresh } = useThoughtLabels(thought.id, thought.projectId);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
 

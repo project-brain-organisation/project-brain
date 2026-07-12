@@ -1,4 +1,4 @@
-.thoughts-list {
+﻿.thoughts-list {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -54,7 +54,7 @@
   min-width: 80px;
 }
 
-/* ─── Node border color picker ────────────────── */
+/* â”€â”€â”€ Node border color picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .thoughts-list-title-row {
   display: flex;
   align-items: center;
@@ -178,7 +178,7 @@
   color: var(--text);
 }
 
-/* ─── Create form ─────────────────────────────── */
+/* â”€â”€â”€ Create form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .thoughts-list-create {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
@@ -240,7 +240,7 @@
   border-color: var(--border2);
 }
 
-/* ─── Card stack ──────────────────────────────── */
+/* â”€â”€â”€ Card stack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .thoughts-list-cards {
   flex: 1;
   overflow-y: auto;
@@ -261,5 +261,4 @@
   font-size: 12px;
   text-align: center;
   padding: 20px;
-}
 }

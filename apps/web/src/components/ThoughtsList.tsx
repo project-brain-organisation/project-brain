@@ -43,7 +43,13 @@ export function ThoughtsList({
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const { thoughtLabels, assignLabel, unassignLabel, refresh } = useThoughtLabels(activeNode?.id);
+  // Labels only apply to real thoughts — the project root pseudo-node is not
+  // a taggable entity in the v2 model.
+  const isProjectRoot = !!activeNode?.isRoot;
+  const { thoughtLabels, assignLabel, unassignLabel, refresh } = useThoughtLabels(
+    isProjectRoot ? undefined : activeNode?.id,
+    activeNode?.projectId,
+  );
 
   useEffect(() => {
     if (!colorPickerOpen) return;
@@ -158,7 +164,8 @@ export function ThoughtsList({
               )}
             </div>
           </div>
-          {editingBody ? (
+          {/* The project root has no persistable body in the v2 model */}
+          {!isProjectRoot && (editingBody ? (
             <textarea
               ref={bodyTextareaRef}
               className="thoughts-list-body-input"
@@ -181,8 +188,8 @@ export function ThoughtsList({
             >
               {activeNode?.body || 'Click to add a description...'}
             </p>
-          )}
-          {activeNode && (
+          ))}
+          {activeNode && !isProjectRoot && (
             <div className="thoughts-list-header-labels">
               {thoughtLabels.map((tl) => (
                 <button

@@ -2,8 +2,8 @@ import { Outlet } from 'react-router-dom';
 import { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { useAuth } from '../hooks/useAuth';
-import { useThoughts } from '../hooks/useThoughts';
-import { useMcpToolEvents } from '../hooks/useMcpToolEvents';
+import { useProjects } from '../hooks/useProjects';
+import { useWorkspaceEvents } from '../hooks/useWorkspaceEvents';
 import { useSelectedRoot } from '../contexts/SelectedRootContext';
 import { Login } from './Login';
 import { McpDialog } from './McpDialog';
@@ -11,16 +11,19 @@ import './Shell.css';
 
 export function Shell() {
   const { user, loading: authLoading, logout } = useAuth();
-  const { roots, createRoot, removeThought, fetchRoots } = useThoughts();
+  const { projects, createProject, removeProject } = useProjects();
   const { selectedRootId, setSelectedRootId } = useSelectedRoot();
   const [mcpOpen, setMcpOpen] = useState(false);
 
-  useMcpToolEvents();
+  useWorkspaceEvents();
 
   const handleCreateProject = async () => {
-    const project = await createRoot('');
-    await fetchRoots();
-    return project;
+    return createProject();
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    await removeProject(id);
+    if (selectedRootId === id) setSelectedRootId(undefined);
   };
 
   if (authLoading) {
@@ -36,11 +39,11 @@ export function Shell() {
       <Sidebar
         username={user.username}
         onLogout={logout}
-        roots={roots}
-        selectedRootId={selectedRootId}
-        onSelectRoot={setSelectedRootId}
-        onCreateRoot={handleCreateProject}
-        onDeleteRoot={removeThought}
+        projects={projects}
+        selectedProjectId={selectedRootId}
+        onSelectProject={setSelectedRootId}
+        onCreateProject={handleCreateProject}
+        onDeleteProject={handleDeleteProject}
         onMcpOpen={() => setMcpOpen(true)}
       />
       <main className="shell-main">
