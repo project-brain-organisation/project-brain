@@ -1,22 +1,25 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { createAddLabelToThoughtTool } from './add-label-to-thought-tool.js';
-import { createClearThoughtColorTool } from './clear-thought-color-tool.js';
-import { createCreateLabelTool } from './create-label-tool.js';
-import { createCreateProjectTool } from './create-project-tool.js';
-import { createCreateThoughtTool } from './create-thought-tool.js';
-import { createEditThoughtTool } from './edit-thought-tool.js';
-import { createElaborateTool } from './elaborate-tool.js';
-import { createGetThoughtLabelsTool } from './get-thought-labels-tool.js';
-import { createListLabelsTool } from './list-labels-tool.js';
-import { createListThoughtsTool } from './list-thoughts-tool.js';
-import { createRemoveLabelFromThoughtTool } from './remove-label-from-thought-tool.js';
-import { createRemoveLabelTool } from './remove-label-tool.js';
-import { createRemoveThoughtTool } from './remove-thought-tool.js';
-import { createSetLabelEdgeTool } from './set-label-edge-tool.js';
-import { createSetThoughtColorTool } from './set-thought-color-tool.js';
-import { createThoughtToPromptTool } from './thought-to-prompt-tool.js';
-import { createUpdateLabelTool } from './update-label-tool.js';
+import { createElaborateTool, createThoughtToPromptTool } from './retrieval-tools.js';
+import { createCreateProjectTool } from './project-tools.js';
+import {
+  createClearThoughtColorTool,
+  createCreateThoughtTool,
+  createEditThoughtTool,
+  createListThoughtsTool,
+  createRemoveThoughtTool,
+  createSetThoughtColorTool,
+} from './thought-tools.js';
+import {
+  createAddLabelToThoughtTool,
+  createCreateLabelTool,
+  createGetThoughtLabelsTool,
+  createListLabelsTool,
+  createRemoveLabelFromThoughtTool,
+  createRemoveLabelTool,
+  createSetLabelEdgeTool,
+  createUpdateLabelTool,
+} from './label-tools.js';
 
 const uuidA = '550e8400-e29b-41d4-a716-446655440000';
 const uuidB = '4de89e56-7b8a-4d89-adf5-dbf84f8f4123';

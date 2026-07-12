@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGetThoughtTool } from './get-thought-tool.js';
+import { createGetThoughtTool } from './thought-tools.js';
 import type { ApiResult } from './tool-contract.js';
 
 const validUuid = '550e8400-e29b-41d4-a716-446655440000';

@@ -1,273 +1,150 @@
+type RequestContext = { userId: string; scope?: string };
+
+type RequestResult =
+  | { ok: true; status: number; data: unknown }
+  | { ok: false; status: number; error: string };
+
 export class ApiClient {
   constructor(
     private readonly baseUrl: string,
     private readonly internalKey: string,
   ) {}
 
-  private headers(userId: string, scope?: string): Record<string, string> {
+  private async request(
+    method: 'GET' | 'POST',
+    path: string,
+    { userId, scope }: RequestContext,
+    body?: unknown,
+  ): Promise<RequestResult> {
     const headers: Record<string, string> = {
       'x-mcp-internal-key': this.internalKey,
       'x-mcp-user-id': userId,
       'Content-Type': 'application/json',
     };
-
     if (scope) {
       headers['x-mcp-scope'] = scope;
     }
 
-    return headers;
-  }
+    const res = await fetch(`${this.baseUrl}/api/internal/mcp/${path}`, {
+      method,
+      headers,
+      ...(body !== undefined && { body: JSON.stringify(body) }),
+    });
 
-  private async toResult<T>(res: Response): Promise<
-    | { ok: true; status: number; data: T }
-    | { ok: false; status: number; error: string }
-  > {
-    const raw = await res.text();
-    const text = raw.trim();
+    const text = (await res.text()).trim();
 
     if (!res.ok) {
-      return {
-        ok: false,
-        status: res.status,
-        error: text || 'Request failed',
-      };
+      return { ok: false, status: res.status, error: text || 'Request failed' };
     }
 
-    if (!text) {
-      return {
-        ok: true,
-        status: res.status,
-        data: {} as T,
-      };
-    }
-
-    return {
-      ok: true,
-      status: res.status,
-      data: JSON.parse(text) as T,
-    };
+    return { ok: true, status: res.status, data: text ? JSON.parse(text) : {} };
   }
 
-  async listProjects(userId: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/list-projects`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-    });
-
-    return this.toResult<unknown>(res);
+  private get(path: string, ctx: RequestContext) {
+    return this.request('GET', path, ctx);
   }
 
-  async getThought(userId: string, thoughtId: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/thought/${thoughtId}`, {
-      method: 'GET',
-      headers: this.headers(userId, scope),
-    });
-
-    return this.toResult<unknown>(res);
+  private post(path: string, ctx: RequestContext, body?: unknown) {
+    return this.request('POST', path, ctx, body);
   }
 
-  async createProject(userId: string, name: string, emoji?: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/create-project`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify({ name, emoji }),
-    });
-
-    return this.toResult<unknown>(res);
+  listProjects(userId: string, scope?: string) {
+    return this.post('list-projects', { userId, scope });
   }
 
-  async listThoughts(
-    userId: string,
-    params: { projectId: string },
-    scope?: string,
-  ) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/list-thoughts`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify(params),
-    });
-
-    return this.toResult<unknown>(res);
+  createProject(userId: string, name: string, emoji?: string, scope?: string) {
+    return this.post('create-project', { userId, scope }, { name, emoji });
   }
 
-  async createThought(
+  getThought(userId: string, thoughtId: string, scope?: string) {
+    return this.get(`thought/${thoughtId}`, { userId, scope });
+  }
+
+  listThoughts(userId: string, params: { projectId: string }, scope?: string) {
+    return this.post('list-thoughts', { userId, scope }, params);
+  }
+
+  createThought(
     userId: string,
     params: { body: string; title?: string; projectId: string },
     scope?: string,
   ) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/create-thought`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify(params),
-    });
-
-    return this.toResult<unknown>(res);
+    return this.post('create-thought', { userId, scope }, params);
   }
 
-  async editThought(
-    userId: string,
-    params: { thoughtId: string; body: string },
-    scope?: string,
-  ) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/edit-thought`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify(params),
-    });
-
-    return this.toResult<unknown>(res);
+  editThought(userId: string, params: { thoughtId: string; body: string }, scope?: string) {
+    return this.post('edit-thought', { userId, scope }, params);
   }
 
-  async removeThought(userId: string, thoughtId: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/remove-thought`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify({ thoughtId }),
-    });
-
-    return this.toResult<unknown>(res);
+  removeThought(userId: string, thoughtId: string, scope?: string) {
+    return this.post('remove-thought', { userId, scope }, { thoughtId });
   }
 
-  async elaborate(userId: string, chunkId: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/elaborate/${chunkId}`, {
-      method: 'GET',
-      headers: this.headers(userId, scope),
-    });
-
-    return this.toResult<unknown>(res);
+  elaborate(userId: string, chunkId: string, scope?: string) {
+    return this.get(`elaborate/${chunkId}`, { userId, scope });
   }
 
-  async thoughtToPrompt(userId: string, thoughtId: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/thought-to-prompt/${thoughtId}`, {
-      method: 'GET',
-      headers: this.headers(userId, scope),
-    });
-
-    return this.toResult<unknown>(res);
+  thoughtToPrompt(userId: string, thoughtId: string, scope?: string) {
+    return this.get(`thought-to-prompt/${thoughtId}`, { userId, scope });
   }
 
-  async listLabels(userId: string, projectId: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/list-labels`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify({ projectId }),
-    });
-
-    return this.toResult<unknown>(res);
+  remember(userId: string, query: string, n: number, projectId?: string, scope?: string) {
+    return this.post('remember', { userId, scope }, { query, n, projectId });
   }
 
-  async createLabel(
+  listLabels(userId: string, projectId: string, scope?: string) {
+    return this.post('list-labels', { userId, scope }, { projectId });
+  }
+
+  createLabel(
     userId: string,
     params: { name: string; color?: string; projectId: string },
     scope?: string,
   ) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/create-label`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify(params),
-    });
-
-    return this.toResult<unknown>(res);
+    return this.post('create-label', { userId, scope }, params);
   }
 
-  async updateLabel(
+  updateLabel(
     userId: string,
     params: { labelId: string; name?: string; color?: string; isEdge?: boolean },
     scope?: string,
   ) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/update-label`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify(params),
-    });
-
-    return this.toResult<unknown>(res);
+    return this.post('update-label', { userId, scope }, params);
   }
 
-  async removeLabel(userId: string, labelId: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/remove-label`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify({ labelId }),
-    });
-
-    return this.toResult<unknown>(res);
+  removeLabel(userId: string, labelId: string, scope?: string) {
+    return this.post('remove-label', { userId, scope }, { labelId });
   }
 
-  async addLabelToThought(
+  addLabelToThought(
     userId: string,
     params: { thoughtId: string; labelId: string; projectId: string },
     scope?: string,
   ) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/add-label-to-thought`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify(params),
-    });
-
-    return this.toResult<unknown>(res);
+    return this.post('add-label-to-thought', { userId, scope }, params);
   }
 
-  async removeLabelFromThought(
+  removeLabelFromThought(
     userId: string,
     params: { thoughtId: string; labelId: string },
     scope?: string,
   ) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/remove-label-from-thought`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify(params),
-    });
-
-    return this.toResult<unknown>(res);
+    return this.post('remove-label-from-thought', { userId, scope }, params);
   }
 
-  async getThoughtLabels(userId: string, thoughtId: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/thought-labels/${thoughtId}`, {
-      method: 'GET',
-      headers: this.headers(userId, scope),
-    });
-
-    return this.toResult<unknown>(res);
+  getThoughtLabels(userId: string, thoughtId: string, scope?: string) {
+    return this.get(`thought-labels/${thoughtId}`, { userId, scope });
   }
 
-  async setLabelEdge(userId: string, labelId: string, isEdge: boolean, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/set-label-edge`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify({ labelId, isEdge }),
-    });
-
-    return this.toResult<unknown>(res);
+  setLabelEdge(userId: string, labelId: string, isEdge: boolean, scope?: string) {
+    return this.post('set-label-edge', { userId, scope }, { labelId, isEdge });
   }
 
-  async setThoughtColor(userId: string, thoughtId: string, hex: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/set-thought-color`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify({ thoughtId, hex }),
-    });
-
-    return this.toResult<unknown>(res);
+  setThoughtColor(userId: string, thoughtId: string, hex: string, scope?: string) {
+    return this.post('set-thought-color', { userId, scope }, { thoughtId, hex });
   }
 
-  async clearThoughtColor(userId: string, thoughtId: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/clear-thought-color`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify({ thoughtId }),
-    });
-
-    return this.toResult<unknown>(res);
-  }
-
-  async remember(userId: string, query: string, n: number, projectId?: string, scope?: string) {
-    const res = await fetch(`${this.baseUrl}/api/internal/mcp/remember`, {
-      method: 'POST',
-      headers: this.headers(userId, scope),
-      body: JSON.stringify({ query, n, projectId }),
-    });
-
-    return this.toResult<unknown>(res);
+  clearThoughtColor(userId: string, thoughtId: string, scope?: string) {
+    return this.post('clear-thought-color', { userId, scope }, { thoughtId });
   }
 }

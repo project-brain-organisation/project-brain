@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRememberTool } from './remember-tool.js';
+import { createRememberTool } from './retrieval-tools.js';
 import type { ApiResult } from './tool-contract.js';
 
 describe('remember tool', () => {

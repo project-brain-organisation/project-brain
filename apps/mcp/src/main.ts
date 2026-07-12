@@ -6,6 +6,7 @@ import {
   getMcpServerKey,
   verifyMcpAccessToken,
 } from './auth.js';
+import { config } from './config.js';
 import { createToolRegistry } from './tools/index.js';
 import type {
   JsonRpcRequest,
@@ -13,25 +14,7 @@ import type {
   ToolCallParams,
 } from './types.js';
 
-const port = Number(process.env.PORT ?? 3100);
-const serverSecret = process.env.MCP_SERVER_SECRET;
-const internalApiUrl = process.env.INTERNAL_API_URL ?? 'http://localhost:3000';
-const internalApiKey = process.env.MCP_INTERNAL_KEY;
-const protocolVersion = '2025-03-26';
-const allowedOrigins = (process.env.MCP_ALLOWED_ORIGINS ?? 'https://claude.ai,https://www.claude.ai,http://localhost:5173')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter((origin) => origin.length > 0);
-
-if (!serverSecret) {
-  throw new Error('Missing MCP_SERVER_SECRET');
-}
-
-if (!internalApiKey) {
-  throw new Error('Missing MCP_INTERNAL_KEY');
-}
-
-const apiClient = new ApiClient(internalApiUrl, internalApiKey);
+const apiClient = new ApiClient(config.internalApiUrl, config.internalApiKey);
 const { tools, toolByName } = createToolRegistry(apiClient);
 const app = express();
 
@@ -68,7 +51,7 @@ async function authorize(req: Request): Promise<{
   ok: boolean;
   claims: Awaited<ReturnType<typeof verifyMcpAccessToken>>;
 }> {
-  const hasServerKey = getMcpServerKey(req) === serverSecret;
+  const hasServerKey = getMcpServerKey(req) === config.serverSecret;
   const userToken = getMcpAccessToken(req);
   const claims = userToken ? await verifyMcpAccessToken(userToken) : null;
   return { ok: hasServerKey || claims !== null, claims };
@@ -94,6 +77,57 @@ function jsonRpcError(
   };
 }
 
+async function handleToolCall(
+  res: Response,
+  id: string | number | null,
+  params: ToolCallParams,
+  claims: NonNullable<Awaited<ReturnType<typeof verifyMcpAccessToken>>>,
+) {
+  if (!params.name) {
+    res.json(jsonRpcError(id, -32602, 'Missing tool name'));
+    return;
+  }
+
+  const tool = toolByName.get(params.name);
+  if (!tool) {
+    res.json(jsonRpcError(id, -32601, `Unknown tool: ${params.name}`));
+    return;
+  }
+
+  // Tool execution failures are reported as CallToolResult with isError
+  // (MCP spec) — clients render the text; JSON-RPC error codes outside the
+  // standard set get masked by claude.ai as a generic message.
+  const toolError = (text: string) =>
+    res.json(jsonRpcResult(id, { content: [{ type: 'text', text }], isError: true }));
+
+  const userId = claims.sub;
+  const scope = typeof claims.scope === 'string' ? claims.scope : undefined;
+
+  let result;
+  try {
+    const args = tool.parseArguments(params.arguments ?? {});
+    result = await tool.execute({ userId, scope }, args);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`tools/call ${params.name} threw: ${message}`);
+    toolError(`${params.name} failed: ${message}`);
+    return;
+  }
+
+  if (!result.ok) {
+    const detail = result.error.slice(0, 300);
+    console.error(`tools/call ${params.name} upstream ${result.status}: ${detail}`);
+    toolError(`${tool.name} failed (${result.status}): ${detail}`);
+    return;
+  }
+
+  res.json(
+    jsonRpcResult(id, {
+      content: [{ type: 'text', text: JSON.stringify(result.data, null, 2) }],
+    }),
+  );
+}
+
 app.get('/healthz', (_req, res) => {
   res.json({ ok: true });
 });
@@ -104,7 +138,7 @@ app.get('/healthz', (_req, res) => {
 app.get(
   ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'],
   (req: Request, res: Response) => {
-    const authorizationServer = process.env.MCP_PUBLIC_API_URL ?? internalApiUrl;
+    const authorizationServer = process.env.MCP_PUBLIC_API_URL ?? config.internalApiUrl;
     res.json({
       resource: process.env.MCP_PUBLIC_RESOURCE_URL ?? `${selfBase(req)}/mcp`,
       authorization_servers: [authorizationServer],
@@ -121,7 +155,7 @@ app.use('/mcp', (req, res, next) => {
     return;
   }
 
-  if (!allowedOrigins.includes(origin)) {
+  if (!config.allowedOrigins.includes(origin)) {
     res.status(403).json({ error: 'Origin not allowed' });
     return;
   }
@@ -131,14 +165,14 @@ app.use('/mcp', (req, res, next) => {
 
 app.use('/mcp', (req, res, next) => {
   const clientProtocol = req.header('mcp-protocol-version');
-  if (clientProtocol && clientProtocol !== protocolVersion) {
+  if (clientProtocol && clientProtocol !== config.protocolVersion) {
     res
       .status(400)
       .json({ error: `Unsupported MCP protocol version: ${clientProtocol}` });
     return;
   }
 
-  res.setHeader('MCP-Protocol-Version', protocolVersion);
+  res.setHeader('MCP-Protocol-Version', config.protocolVersion);
   next();
 });
 
@@ -183,7 +217,7 @@ app.post('/mcp', async (req: Request, res: Response) => {
   if (message.method === 'initialize') {
     res.json(
       jsonRpcResult(id, {
-        protocolVersion,
+        protocolVersion: config.protocolVersion,
         capabilities: { tools: {} },
         serverInfo: {
           name: 'project-brain-sidecar',
@@ -211,64 +245,19 @@ app.post('/mcp', async (req: Request, res: Response) => {
 
   if (message.method === 'tools/call') {
     // Tool calls always need a per-user identity — the server key is not enough.
-    const claims = auth.claims;
-    if (!claims) {
+    if (!auth.claims) {
       unauthorizedWithChallenge(req, res, authErrorMessage(req));
       return;
     }
 
-    const userId = claims.sub;
-    const scope = typeof claims.scope === 'string' ? claims.scope : undefined;
-
-    const params = (message.params ?? {}) as ToolCallParams;
-
-    if (!params.name) {
-      res.json(jsonRpcError(id, -32602, 'Missing tool name'));
-      return;
-    }
-
-    const tool = toolByName.get(params.name);
-    if (!tool) {
-      res.json(jsonRpcError(id, -32601, `Unknown tool: ${params.name}`));
-      return;
-    }
-
-    // Tool execution failures are reported as CallToolResult with isError
-    // (MCP spec) — clients render the text; JSON-RPC error codes outside the
-    // standard set get masked by claude.ai as a generic message.
-    const toolError = (text: string) =>
-      res.json(jsonRpcResult(id, { content: [{ type: 'text', text }], isError: true }));
-
-    let result;
-    try {
-      const args = tool.parseArguments(params.arguments ?? {});
-      result = await tool.execute({ userId, scope }, args);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`tools/call ${params.name} threw: ${message}`);
-      toolError(`${params.name} failed: ${message}`);
-      return;
-    }
-
-    if (!result.ok) {
-      const detail = result.error.slice(0, 300);
-      console.error(`tools/call ${params.name} upstream ${result.status}: ${detail}`);
-      toolError(`${tool.name} failed (${result.status}): ${detail}`);
-      return;
-    }
-
-    res.json(
-      jsonRpcResult(id, {
-        content: [{ type: 'text', text: JSON.stringify(result.data, null, 2) }],
-      }),
-    );
+    await handleToolCall(res, id, (message.params ?? {}) as ToolCallParams, auth.claims);
     return;
   }
 
   res.json(jsonRpcError(id, -32601, `Method not found: ${message.method}`));
 });
 
-app.listen(port, () => {
-  console.log(`MCP sidecar running on http://localhost:${port}`);
-  console.log(`Internal API: ${internalApiUrl}`);
+app.listen(config.port, () => {
+  console.log(`MCP sidecar running on http://localhost:${config.port}`);
+  console.log(`Internal API: ${config.internalApiUrl}`);
 });

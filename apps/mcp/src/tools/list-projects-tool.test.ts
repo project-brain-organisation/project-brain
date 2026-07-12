@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createListProjectsTool } from './list-projects-tool.js';
+import { createListProjectsTool } from './project-tools.js';
 import type { ApiResult } from './tool-contract.js';
 
 describe('list_projects tool', () => {

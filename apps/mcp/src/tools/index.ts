@@ -1,25 +1,30 @@
 import type { ApiClient } from '../api-client.js';
-import { createAddLabelToThoughtTool } from './add-label-to-thought-tool.js';
-import { createClearThoughtColorTool } from './clear-thought-color-tool.js';
-import { createCreateLabelTool } from './create-label-tool.js';
-import { createCreateProjectTool } from './create-project-tool.js';
-import { createCreateThoughtTool } from './create-thought-tool.js';
-import { createEditThoughtTool } from './edit-thought-tool.js';
-import { createElaborateTool } from './elaborate-tool.js';
-import { createGetThoughtTool } from './get-thought-tool.js';
-import { createGetThoughtLabelsTool } from './get-thought-labels-tool.js';
-import { createListProjectsTool } from './list-projects-tool.js';
-import { createListLabelsTool } from './list-labels-tool.js';
-import { createListThoughtsTool } from './list-thoughts-tool.js';
-import { createRemoveLabelFromThoughtTool } from './remove-label-from-thought-tool.js';
-import { createRemoveLabelTool } from './remove-label-tool.js';
-import { createRemoveThoughtTool } from './remove-thought-tool.js';
-import { createRememberTool } from './remember-tool.js';
-import { createSetLabelEdgeTool } from './set-label-edge-tool.js';
-import { createSetThoughtColorTool } from './set-thought-color-tool.js';
-import { createThoughtToPromptTool } from './thought-to-prompt-tool.js';
-import { createUpdateLabelTool } from './update-label-tool.js';
 import type { ToolDefinition } from './tool-contract.js';
+import {
+  createElaborateTool,
+  createRememberTool,
+  createThoughtToPromptTool,
+} from './retrieval-tools.js';
+import { createCreateProjectTool, createListProjectsTool } from './project-tools.js';
+import {
+  createClearThoughtColorTool,
+  createCreateThoughtTool,
+  createEditThoughtTool,
+  createGetThoughtTool,
+  createListThoughtsTool,
+  createRemoveThoughtTool,
+  createSetThoughtColorTool,
+} from './thought-tools.js';
+import {
+  createAddLabelToThoughtTool,
+  createCreateLabelTool,
+  createGetThoughtLabelsTool,
+  createListLabelsTool,
+  createRemoveLabelFromThoughtTool,
+  createRemoveLabelTool,
+  createSetLabelEdgeTool,
+  createUpdateLabelTool,
+} from './label-tools.js';
 
 export function createToolRegistry(apiClient: ApiClient) {
   const toolDefinitions: ToolDefinition[] = [
