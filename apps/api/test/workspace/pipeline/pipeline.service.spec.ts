@@ -83,6 +83,29 @@ function makePersistenceDb() {
   };
 }
 
+/**
+ * Flatten a drizzle SQL object's queryChunks into literal text + bound values.
+ * Chunks interleave StringChunk ({ value: string[] }), nested SQL objects
+ * ({ queryChunks }), and raw bound values — nested fragments (e.g. the
+ * conditional project filter) must be descended into, not skipped.
+ */
+function flattenSql(queryChunks: unknown[]): { text: string; values: unknown[] } {
+  let text = '';
+  const values: unknown[] = [];
+  for (const chunk of queryChunks) {
+    if (chunk && typeof chunk === 'object' && 'value' in chunk) {
+      text += ((chunk as { value: string[] }).value ?? []).join('');
+    } else if (chunk && typeof chunk === 'object' && 'queryChunks' in chunk) {
+      const nested = flattenSql((chunk as { queryChunks: unknown[] }).queryChunks);
+      text += nested.text;
+      values.push(...nested.values);
+    } else {
+      values.push(chunk);
+    }
+  }
+  return { text, values };
+}
+
 // ── Tests ──────────────────────────────────────────────────────────
 
 describe('WorkspacePipelineService', () => {
@@ -142,23 +165,10 @@ describe('WorkspacePipelineService', () => {
       expect(executeSpy).toHaveBeenCalledTimes(1);
 
       // The parameterized SQL must scope by the owning project_id and must NOT
-      // reference a user_id column. drizzle's SQL object interleaves literal text
-      // (StringChunk { value: string[] }) with bound values directly inside
-      // queryChunks.
-      const sqlArg = executeSpy.mock.calls[0][0] as {
-        queryChunks?: unknown[];
-      };
-      const queryChunks = sqlArg.queryChunks ?? [];
-      const sqlText = queryChunks
-        .map((chunk) =>
-          chunk && typeof chunk === 'object' && 'value' in chunk
-            ? ((chunk as { value: string[] }).value ?? []).join('')
-            : '',
-        )
-        .join('');
-      const boundValues = queryChunks.filter(
-        (chunk) => !(chunk && typeof chunk === 'object' && 'value' in chunk),
-      );
+      // reference a user_id column. The project filter is a nested sql fragment
+      // (it is conditional), so the chunks are flattened recursively.
+      const sqlArg = executeSpy.mock.calls[0][0] as { queryChunks?: unknown[] };
+      const { text: sqlText, values: boundValues } = flattenSql(sqlArg.queryChunks ?? []);
 
       expect(sqlText).toContain('project_id');
       expect(sqlText).not.toContain('user_id');
@@ -170,6 +180,21 @@ describe('WorkspacePipelineService', () => {
       ]);
 
       void tx; // suppress unused warning
+    });
+
+    it('searches all of the user\'s projects when projectId is omitted (RLS scopes rows)', async () => {
+      const { dbService, asUser, executeSpy } = makePersistenceDb();
+      const embedding = makeEmbeddingService([[0.5, 0.5]]);
+      const service = new PipelineService(dbService, embedding, new ChunkingService());
+
+      await service.semanticSearch('owner', undefined, 'find me');
+
+      // Runs under the user's tenant context; no project filter in the SQL.
+      expect(asUser).toHaveBeenCalledWith('owner', expect.any(Function));
+      const sqlArg = executeSpy.mock.calls[0][0] as { queryChunks?: unknown[] };
+      const { text: sqlText } = flattenSql(sqlArg.queryChunks ?? []);
+      expect(sqlText).not.toContain('project_id');
+      expect(sqlText).toContain('WHERE TRUE');
     });
   });
 });
