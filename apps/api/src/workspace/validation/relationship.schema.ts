@@ -18,6 +18,8 @@ const relationshipInsert = createInsertSchema(relationships);
 
 export const createRelationshipSchema = z
   .object({
+    // Optional client-generated id (optimistic UI inserts). Duplicate → 409.
+    id: z.string().uuid().optional(),
     projectId: relationshipInsert.shape.projectId,
     sourceId: relationshipInsert.shape.sourceId,
     targetId: relationshipInsert.shape.targetId,

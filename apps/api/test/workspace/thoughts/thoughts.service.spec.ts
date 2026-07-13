@@ -18,7 +18,12 @@
  * No mocks inside the hexagonal domain — only at port boundaries.
  */
 
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ThoughtsService } from '../../../src/workspace/thoughts/thoughts.service';
 import type { DatabaseService } from '../../../src/database/database.service';
 import type { ProjectsService } from '../../../src/projects/projects.service';
@@ -209,6 +214,72 @@ describe('WorkspaceThoughtsService', () => {
       await expect(
         service.create('user-1', { projectId: 'proj-1', body: 'hello' }),
       ).rejects.toThrow('DB constraint violation');
+    });
+
+    it('honours a client-supplied id and creates the hierarchy edge in the same tx (parentId)', async () => {
+      const inserted: Array<{ table: string; values: Record<string, unknown> }> = [];
+      const tx = {
+        insert: jest.fn((table: Record<string, unknown>) => ({
+          values: (vals: Record<string, unknown>) => {
+            inserted.push({ table: (table as any)[Symbol.for('drizzle:Name')], values: vals });
+            return { returning: jest.fn().mockResolvedValue([{ id: 'rel-1', ...vals }]) };
+          },
+        })),
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([{ id: 'parent-1', projectId: 'proj-1', type: 'thought' }]),
+        }),
+      };
+      const asUser = jest.fn((_u: string, cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+      const service = new ThoughtsService(
+        { asUser } as unknown as DatabaseService,
+        makeProjectsService(), makePipelineService(), makeWorkspaceEventsService(),
+      );
+
+      const result = await service.create('user-1', {
+        id: 'client-uuid', projectId: 'proj-1', body: 'hi', parentId: 'parent-1',
+      });
+
+      expect(inserted.map((c) => c.table)).toEqual(['entities', 'thoughts', 'relationships']);
+      expect(inserted[0].values.id).toBe('client-uuid');
+      expect(inserted[2].values).toMatchObject({
+        sourceId: 'client-uuid', targetId: 'parent-1', kind: 'hierarchy', projectId: 'proj-1',
+      });
+      expect(result).toMatchObject({ id: 'client-uuid', parentRelationshipId: 'rel-1' });
+    });
+
+    it('rejects a parentId that is not a thought in the same project', async () => {
+      const entityRow = { id: 'entity-uuid', projectId: 'proj-1', type: 'thought' };
+      const thoughtRow = { id: 'entity-uuid', projectId: 'proj-1', body: 'hi', title: '', color: null };
+      const { tx } = makeTxMock(entityRow, thoughtRow); // select chain resolves [] → parent unknown
+      const asUser = jest.fn((_u: string, cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+      const service = new ThoughtsService(
+        { asUser } as unknown as DatabaseService,
+        makeProjectsService(), makePipelineService(), makeWorkspaceEventsService(),
+      );
+
+      await expect(
+        service.create('user-1', { projectId: 'proj-1', body: 'hi', parentId: 'ghost' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('maps a duplicate client id (23505 on the cause chain) to ConflictException', async () => {
+      const dup = Object.assign(new Error('duplicate key'), { cause: { code: '23505' } });
+      const tx = {
+        insert: jest.fn(() => ({
+          values: () => ({ returning: jest.fn().mockRejectedValue(dup) }),
+        })),
+      };
+      const asUser = jest.fn((_u: string, cb: (tx: unknown) => Promise<unknown>) => cb(tx));
+      const service = new ThoughtsService(
+        { asUser } as unknown as DatabaseService,
+        makeProjectsService(), makePipelineService(), makeWorkspaceEventsService(),
+      );
+
+      await expect(
+        service.create('user-1', { id: 'taken', projectId: 'proj-1', body: 'hi' }),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('throws ForbiddenException when assertOwnership rejects', async () => {

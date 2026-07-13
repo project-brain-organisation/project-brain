@@ -1,10 +1,17 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
+import { isUniqueViolation } from '../../database/pg-errors';
 import { ProjectsService } from '../../projects/projects.service';
 import { PipelineService } from '../pipeline/pipeline.service';
 import { WorkspaceEventsService } from '../gateway/workspace-events.service';
-import { entities, thoughts } from '../../database/schema/index';
+import { entities, relationships, thoughts } from '../../database/schema/index';
 import { CreateThoughtDto } from './dto/create-thought.dto';
 
 @Injectable()
@@ -21,32 +28,62 @@ export class ThoughtsService {
   async create(userId: string, dto: CreateThoughtDto, source: 'user' | 'mcp' = 'user') {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
-    const thought = await this.db.asUser(userId, async (tx) => {
-      const id = crypto.randomUUID();
+    const thought = await this.db
+      .asUser(userId, async (tx) => {
+        const id = dto.id ?? crypto.randomUUID();
 
-      await tx
-        .insert(entities)
-        .values({ id, projectId: dto.projectId, type: 'thought' })
-        .returning();
+        await tx
+          .insert(entities)
+          .values({ id, projectId: dto.projectId, type: 'thought' })
+          .returning();
 
-      const [row] = await tx
-        .insert(thoughts)
-        .values({
-          id,
-          projectId: dto.projectId,
-          ownerId: userId,
-          body: dto.body,
-          title: dto.title ?? '',
-          color: dto.color ?? null,
-          canvasX: dto.canvasX ?? null,
-          canvasY: dto.canvasY ?? null,
-          width: dto.width ?? null,
-          height: dto.height ?? null,
-        })
-        .returning();
+        const [row] = await tx
+          .insert(thoughts)
+          .values({
+            id,
+            projectId: dto.projectId,
+            ownerId: userId,
+            body: dto.body,
+            title: dto.title ?? '',
+            color: dto.color ?? null,
+            canvasX: dto.canvasX ?? null,
+            canvasY: dto.canvasY ?? null,
+            width: dto.width ?? null,
+            height: dto.height ?? null,
+          })
+          .returning();
 
-      return row;
-    });
+        // Composite create: parent in the same tx so the client pays one
+        // round trip and never observes a thought without its hierarchy edge.
+        let parentRelationshipId: string | null = null;
+        if (dto.parentId) {
+          const [parent] = await tx
+            .select()
+            .from(entities)
+            .where(eq(entities.id, dto.parentId))
+            .limit(1);
+          if (!parent || parent.type !== 'thought' || parent.projectId !== dto.projectId) {
+            throw new BadRequestException('parentId must be a thought in the same project');
+          }
+          const [rel] = await tx
+            .insert(relationships)
+            .values({
+              projectId: dto.projectId,
+              ownerId: userId,
+              sourceId: id,
+              targetId: dto.parentId,
+              kind: 'hierarchy',
+            })
+            .returning();
+          parentRelationshipId = rel.id;
+        }
+
+        return { ...row, parentRelationshipId };
+      })
+      .catch((err) => {
+        if (isUniqueViolation(err)) throw new ConflictException('Thought already exists');
+        throw err;
+      });
 
     this.workspaceEvents.emit(userId, 'thought.created', {
       source,

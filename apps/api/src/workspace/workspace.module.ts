@@ -9,6 +9,7 @@ import { LabelsService } from './labels/labels.service';
 import { LabelsController } from './labels/labels.controller';
 import { RelationshipsService } from './relationships/relationships.service';
 import { RelationshipsController } from './relationships/relationships.controller';
+import { SnapshotController } from './snapshot.controller';
 import { PipelineService } from './pipeline/pipeline.service';
 import { ChunkingService } from './pipeline/chunking.service';
 import { EmbeddingService } from './pipeline/embedding.service';
@@ -23,7 +24,13 @@ import { EmbeddingService } from './pipeline/embedding.service';
     ChunkingService,
     EmbeddingService,
   ],
-  controllers: [WorkspaceGatewayController, ThoughtsController, LabelsController, RelationshipsController],
+  controllers: [
+    WorkspaceGatewayController,
+    ThoughtsController,
+    LabelsController,
+    RelationshipsController,
+    SnapshotController,
+  ],
   exports: [WorkspaceEventsModule, ThoughtsService, LabelsService, RelationshipsService, PipelineService],
 })
 export class WorkspaceModule {}

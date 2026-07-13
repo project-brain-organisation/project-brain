@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
+import { isUniqueViolation } from '../../database/pg-errors';
 import { ProjectsService } from '../../projects/projects.service';
 import { WorkspaceEventsService } from '../gateway/workspace-events.service';
 import { entities, labels } from '../../database/schema/index';
@@ -18,28 +19,33 @@ export class LabelsService {
   async create(userId: string, dto: CreateLabelDto, source: 'user' | 'mcp' = 'user') {
     await this.projectsService.assertOwnership(userId, dto.projectId);
 
-    const label = await this.db.asUser(userId, async (tx) => {
-      const id = crypto.randomUUID();
+    const label = await this.db
+      .asUser(userId, async (tx) => {
+        const id = dto.id ?? crypto.randomUUID();
 
-      await tx
-        .insert(entities)
-        .values({ id, projectId: dto.projectId, type: 'label' })
-        .returning();
+        await tx
+          .insert(entities)
+          .values({ id, projectId: dto.projectId, type: 'label' })
+          .returning();
 
-      const [row] = await tx
-        .insert(labels)
-        .values({
-          id,
-          projectId: dto.projectId,
-          ownerId: userId,
-          name: dto.name,
-          color: dto.color ?? '#999999',
-          isEdge: dto.isEdge ?? false,
-        })
-        .returning();
+        const [row] = await tx
+          .insert(labels)
+          .values({
+            id,
+            projectId: dto.projectId,
+            ownerId: userId,
+            name: dto.name,
+            color: dto.color ?? '#999999',
+            isEdge: dto.isEdge ?? false,
+          })
+          .returning();
 
-      return row;
-    });
+        return row;
+      })
+      .catch((err) => {
+        if (isUniqueViolation(err)) throw new ConflictException('Label already exists');
+        throw err;
+      });
 
     this.workspaceEvents.emit(userId, 'label.created', {
       source,

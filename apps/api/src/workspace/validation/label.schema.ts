@@ -16,6 +16,8 @@ const labelInsert = createInsertSchema(labels);
 
 export const createLabelSchema = z
   .object({
+    // Optional client-generated id (optimistic UI inserts). Duplicate → 409.
+    id: z.string().uuid().optional(),
     projectId: entityInsert.shape.projectId,
     name: z.string().trim().min(1).max(100),
   })

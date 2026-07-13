@@ -29,6 +29,12 @@ export const createThoughtSchema = z
     body: z.string().trim().max(50_000),
   })
   .extend({
+    // Optional client-generated id — lets the UI insert optimistically and
+    // reference the thought before the request resolves. Duplicate → 409.
+    id: z.string().uuid().optional(),
+    // Optional parent thought: creates the hierarchy relationship in the same
+    // transaction (one round trip, no half-created state).
+    parentId: z.string().uuid().optional(),
     title: thoughtInsert.shape.title.optional(),
     color: z
       .string()

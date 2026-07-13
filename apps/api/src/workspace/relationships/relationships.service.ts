@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
+import { isUniqueViolation } from '../../database/pg-errors';
 import { ProjectsService } from '../../projects/projects.service';
 import { WorkspaceEventsService } from '../gateway/workspace-events.service';
 import { entities, relationships } from '../../database/schema/index';
@@ -69,6 +70,7 @@ export class RelationshipsService {
         const [relationship] = await tx
           .insert(relationships)
           .values({
+            ...(dto.id && { id: dto.id }),
             projectId: dto.projectId,
             ownerId: userId,
             sourceId: dto.sourceId,
@@ -86,15 +88,8 @@ export class RelationshipsService {
 
         return relationship;
       } catch (err) {
-        // drizzle wraps driver errors (DrizzleQueryError); the pg code sits on .cause
-        for (
-          let e = err as { code?: unknown; cause?: unknown } | undefined;
-          e;
-          e = e.cause as { code?: unknown; cause?: unknown } | undefined
-        ) {
-          if (e.code === '23505') {
-            throw new ConflictException('Relationship already exists');
-          }
+        if (isUniqueViolation(err)) {
+          throw new ConflictException('Relationship already exists');
         }
         throw err;
       }
