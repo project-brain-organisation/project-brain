@@ -2,11 +2,17 @@ import { useState, useCallback, useMemo, useRef } from 'react';
 import { useThoughts, type Thought } from '../hooks/useThoughts';
 import { useProjects } from '../hooks/useProjects';
 import { useSelectedRoot } from '../contexts/SelectedRootContext';
-import { NetworkView } from './NetworkView';
+import { NetworkView, type NetworkViewMode } from './NetworkView';
+import { RelationshipsDialog } from './RelationshipsDialog';
 import { ThoughtsList } from './ThoughtsList';
 import './HomePage.css';
 
 const DEFAULT_NODE_COLOR = '#e8a838';
+const VIEW_MODE_KEY = 'pb-network-view-mode';
+
+function loadViewMode(): NetworkViewMode {
+  return localStorage.getItem(VIEW_MODE_KEY) === 'graph' ? 'graph' : 'mindmap';
+}
 
 /** Present the selected project as a root pseudo-thought so the list/graph
  *  components can treat it like any other node. */
@@ -34,11 +40,18 @@ function projectToRootNode(project: { id: string; name: string; color: string | 
 export function HomePage() {
   const { selectedRootId, setSelectedRootId } = useSelectedRoot();
   const { projects, loading: projectsLoading, createProject, renameProject, setProjectColor } = useProjects();
-  const { thoughts, loading, createThought, updateThought, setThoughtColor, removeThought } = useThoughts(selectedRootId);
+  const { thoughts, edgeRelationships, loading, createThought, updateThought, setThoughtColor, removeThought } = useThoughts(selectedRootId);
   const [creating, setCreating] = useState(false);
   const [projectName, setProjectName] = useState('');
   // focusedNodeId drills into a child node within the selected project
   const [focusedNodeId, setFocusedNodeId] = useState<string | undefined>(undefined);
+  const [viewMode, setViewMode] = useState<NetworkViewMode>(loadViewMode);
+  const [relDialogOpen, setRelDialogOpen] = useState(false);
+
+  const handleViewModeChange = useCallback((mode: NetworkViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  }, []);
 
   // Auto-select the first project on first load
   const hasAutoSelected = useRef(false);
@@ -131,15 +144,18 @@ export function HomePage() {
     return thoughts;
   }, [thoughts, selectedRootId, focusedNodeId]);
 
-  // Graph shows the active node + visible thoughts. Top-level thoughts hang
+  // Mind map shows the active node + visible thoughts. Top-level thoughts hang
   // off the project root, so substitute the project id for null parents.
+  // Graph mode shows every thought in the project — no root pseudo-node, no
+  // drill-down; NetworkView applies the one-hop filter around focusedNodeId.
   const networkThoughts = useMemo(() => {
+    if (viewMode === 'graph') return thoughts;
     if (!activeNode) return [];
     const withParents = visibleThoughts.map((t) =>
       t.parentId ? t : { ...t, parentId: selectedRootId ?? null },
     );
     return [activeNode, ...withParents];
-  }, [activeNode, visibleThoughts, selectedRootId]);
+  }, [viewMode, thoughts, activeNode, visibleThoughts, selectedRootId]);
 
   if (loading || projectsLoading) {
     return <div className="home-page-loading">Loading...</div>;
@@ -195,8 +211,39 @@ export function HomePage() {
           nodeColors={nodeColors}
           onSelectNode={handleSelectNode}
           onResetView={handleResetView}
+          mode={viewMode}
+          edgeRels={edgeRelationships}
+          focusedNodeId={focusedNodeId}
         />
+        <div className="network-controls">
+          <div className="network-view-toggle">
+            <button
+              className={`network-toggle-btn ${viewMode === 'mindmap' ? 'network-toggle-btn--active' : ''}`}
+              onClick={() => handleViewModeChange('mindmap')}
+            >
+              Mind map
+            </button>
+            <button
+              className={`network-toggle-btn ${viewMode === 'graph' ? 'network-toggle-btn--active' : ''}`}
+              onClick={() => handleViewModeChange('graph')}
+            >
+              Graph
+            </button>
+          </div>
+          <button className="network-rel-btn" onClick={() => setRelDialogOpen(true)}>
+            Relationships
+          </button>
+        </div>
       </div>
+      {selectedRootId && (
+        <RelationshipsDialog
+          open={relDialogOpen}
+          onClose={() => setRelDialogOpen(false)}
+          projectId={selectedRootId}
+          thoughts={thoughts}
+          edgeRels={edgeRelationships}
+        />
+      )}
     </div>
   );
 }

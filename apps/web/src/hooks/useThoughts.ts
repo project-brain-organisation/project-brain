@@ -17,6 +17,14 @@ import { onThoughtsChanged, notifyThoughtsChanged } from '../lib/thoughtsEvents'
  * This hook joins those back onto each thought so components keep the simple
  * v1-era shape (parentId, isRoot, edgeLabels).
  */
+/** An explicit directional relationship (kind='edge') joined with its label. */
+export interface EdgeRelationship {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  label: { id: string; name: string; color: string } | null;
+}
+
 export interface Thought {
   id: string;
   projectId: string;
@@ -68,19 +76,22 @@ function toClientThought(
 
 export function useThoughts(projectId?: string) {
   const [thoughts, setThoughts] = useState<Thought[]>([]);
+  const [edgeRelationships, setEdgeRelationships] = useState<EdgeRelationship[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     if (!projectId) {
       setThoughts([]);
+      setEdgeRelationships([]);
       setLoading(false);
       return [];
     }
     try {
-      const [rows, hierarchyRels, tagRels, labels] = await Promise.all([
+      const [rows, hierarchyRels, tagRels, edgeRels, labels] = await Promise.all([
         thoughtsApi.listByProject(projectId),
         relationshipsApi.listByProject(projectId, 'hierarchy'),
         relationshipsApi.listByProject(projectId, 'tag'),
+        relationshipsApi.listByProject(projectId, 'edge'),
         labelsApi.listByProject(projectId),
       ]);
 
@@ -102,6 +113,17 @@ export function useThoughts(projectId?: string) {
         }
         arr.push({ id: label.id, name: label.name, color: label.color });
       }
+
+      const labelById = new Map(labels.map((l) => [l.id, l]));
+      setEdgeRelationships(edgeRels.map((rel) => {
+        const label = rel.labelId ? labelById.get(rel.labelId) : undefined;
+        return {
+          id: rel.id,
+          sourceId: rel.sourceId,
+          targetId: rel.targetId,
+          label: label ? { id: label.id, name: label.name, color: label.color } : null,
+        };
+      }));
 
       const data = rows.map((row) => toClientThought(row, hierarchyBySource, edgeLabelsByThought));
       setThoughts(data);
@@ -185,6 +207,7 @@ export function useThoughts(projectId?: string) {
 
   return {
     thoughts,
+    edgeRelationships,
     loading,
     createThought,
     updateThought,

@@ -15,8 +15,9 @@ import {
   ZodValidationPipe,
   createLabelSchema,
   type CreateLabelRequest,
+  updateLabelSchema,
+  type UpdateLabelRequest,
 } from '../validation';
-import { UpdateLabelDto } from './dto/update-label.dto';
 
 @Controller('workspace/labels')
 @UseGuards(JwtAuthGuard)
@@ -42,7 +43,11 @@ export class LabelsController {
   }
 
   @Patch(':id')
-  update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateLabelDto) {
+  update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(updateLabelSchema)) dto: UpdateLabelRequest,
+  ) {
     return this.labelsService.update(req.user.userId, id, dto);
   }
 

@@ -17,6 +17,8 @@ export {
 export {
   createLabelSchema,
   type CreateLabelRequest,
+  updateLabelSchema,
+  type UpdateLabelRequest,
 } from './label.schema';
 export {
   createRelationshipSchema,

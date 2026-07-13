@@ -16,6 +16,10 @@ import {
   createSetThoughtColorTool,
 } from './thought-tools.js';
 import {
+  createCreateRelationshipTool,
+  createListRelationshipsTool,
+} from './relationship-tools.js';
+import {
   createAddLabelToThoughtTool,
   createCreateLabelTool,
   createGetThoughtLabelsTool,
@@ -46,6 +50,8 @@ export function createToolRegistry(apiClient: ApiClient) {
     createRemoveLabelFromThoughtTool(apiClient),
     createGetThoughtLabelsTool(apiClient),
     createSetLabelEdgeTool(apiClient),
+    createCreateRelationshipTool(apiClient),
+    createListRelationshipsTool(apiClient),
     createSetThoughtColorTool(apiClient),
     createClearThoughtColorTool(apiClient),
   ];

@@ -86,8 +86,15 @@ export class RelationshipsService {
 
         return relationship;
       } catch (err) {
-        if ((err as Record<string, unknown>)?.code === '23505') {
-          throw new ConflictException('Relationship already exists');
+        // drizzle wraps driver errors (DrizzleQueryError); the pg code sits on .cause
+        for (
+          let e = err as { code?: unknown; cause?: unknown } | undefined;
+          e;
+          e = e.cause as { code?: unknown; cause?: unknown } | undefined
+        ) {
+          if (e.code === '23505') {
+            throw new ConflictException('Relationship already exists');
+          }
         }
         throw err;
       }

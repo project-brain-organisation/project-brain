@@ -29,3 +29,19 @@ export const createLabelSchema = z
   .strict();
 
 export type CreateLabelRequest = z.infer<typeof createLabelSchema>;
+
+export const updateLabelSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100).optional(),
+    color: z
+      .string()
+      .regex(HEX_COLOR, 'color must match #RRGGBB')
+      .optional(),
+    isEdge: labelInsert.shape.isEdge.optional(),
+  })
+  .strict()
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: 'at least one field is required',
+  });
+
+export type UpdateLabelRequest = z.infer<typeof updateLabelSchema>;

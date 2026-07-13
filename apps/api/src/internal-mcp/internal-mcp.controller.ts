@@ -366,6 +366,46 @@ export class InternalMcpController {
     ).filter(Boolean);
   }
 
+  @Post('create-relationship')
+  async createRelationship(
+    @Req() req: Request,
+    @Body() body: { projectId: string; sourceId: string; targetId: string; labelId: string },
+  ) {
+    const userId = this.userIdFromHeaders(req);
+
+    // Mirror the web dialog's rule: explicit relationships carry an edge label
+    const label = await this.labelsService.findOne(userId, body.labelId);
+    if (label.projectId !== body.projectId) {
+      throw new BadRequestException('Label belongs to a different project');
+    }
+    if (!label.isEdge) {
+      throw new BadRequestException(
+        'labelId must reference an edge label (isEdge = true); promote it with set-label-edge first',
+      );
+    }
+
+    return this.relationshipsService.create(
+      userId,
+      {
+        projectId: body.projectId,
+        sourceId: body.sourceId,
+        targetId: body.targetId,
+        kind: 'edge',
+        labelId: body.labelId,
+      },
+      'mcp',
+    );
+  }
+
+  @Post('list-relationships')
+  listRelationships(
+    @Req() req: Request,
+    @Body() body: { projectId: string; kind?: 'hierarchy' | 'tag' | 'edge' },
+  ) {
+    const userId = this.userIdFromHeaders(req);
+    return this.relationshipsService.findByProject(userId, body.projectId, body.kind);
+  }
+
   @Post('set-label-edge')
   setLabelEdge(
     @Req() req: Request,

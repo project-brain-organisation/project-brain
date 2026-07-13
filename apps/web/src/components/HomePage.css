@@ -88,3 +88,72 @@
 .home-page-create-input:focus {
   border-color: var(--accent, #646cff);
 }
+
+/* ── Network area controls (top-right overlay) ── */
+
+.network-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.network-view-toggle {
+  display: flex;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.network-toggle-btn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 5px 10px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.network-toggle-btn + .network-toggle-btn {
+  border-left: 1px solid var(--border2);
+}
+
+.network-toggle-btn:hover {
+  color: var(--text);
+}
+
+.network-toggle-btn--active {
+  background: var(--text);
+  color: #fff;
+}
+
+.network-toggle-btn--active:hover {
+  color: #fff;
+}
+
+.network-rel-btn {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 5px 10px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.network-rel-btn:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}

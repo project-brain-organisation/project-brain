@@ -2,14 +2,23 @@ import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
 import { Group, Sprite, SpriteMaterial, CanvasTexture } from 'three';
-import type { Thought } from '../hooks/useThoughts';
+import type { Thought, EdgeRelationship } from '../hooks/useThoughts';
 import './NetworkView.css';
+
+export type NetworkViewMode = 'mindmap' | 'graph';
 
 interface Props {
   thoughts: Thought[];
   nodeColors?: Record<string, string>;
   onSelectNode?: (id: string) => void;
   onResetView?: () => void;
+  /** 'mindmap' (default): hierarchy + label co-occurrence edges.
+   *  'graph': relationship edges only — explicit directional edges + co-occurrence. */
+  mode?: NetworkViewMode;
+  /** Explicit kind='edge' relationships, rendered as directed links in graph mode. */
+  edgeRels?: EdgeRelationship[];
+  /** In graph mode, filter to this node plus its one-hop neighbours. */
+  focusedNodeId?: string;
 }
 
 interface GraphNode {
@@ -24,12 +33,21 @@ interface GraphLink {
   source: string;
   target: string;
   isLabelEdge?: boolean;
+  isDirected?: boolean;
   labelName?: string;
   labelColor?: string;
   weight?: number;
 }
 
-export function NetworkView({ thoughts, nodeColors = {}, onSelectNode, onResetView }: Props) {
+export function NetworkView({
+  thoughts,
+  nodeColors = {},
+  onSelectNode,
+  onResetView,
+  mode = 'mindmap',
+  edgeRels = [],
+  focusedNodeId,
+}: Props) {
   const [dimensions, setDimensions] = useState({ width: 400, height: 400 });
   const fgRef = useRef<any>(null);
 
@@ -71,13 +89,47 @@ export function NetworkView({ thoughts, nodeColors = {}, onSelectNode, onResetVi
       });
     }
 
-    // Track existing parent-child edges to avoid duplicates
+    // Pairs already linked (hierarchy or explicit edges) — co-occurrence skips them
     const existingEdges = new Set<string>();
-    for (const thought of thoughts) {
-      if (thought.parentId && idSet.has(thought.parentId)) {
-        links.push({ source: thought.parentId, target: thought.id });
-        const a = thought.parentId < thought.id ? thought.parentId : thought.id;
-        const b = thought.parentId < thought.id ? thought.id : thought.parentId;
+
+    if (mode === 'mindmap') {
+      for (const thought of thoughts) {
+        if (thought.parentId && idSet.has(thought.parentId)) {
+          links.push({ source: thought.parentId, target: thought.id });
+          const a = thought.parentId < thought.id ? thought.parentId : thought.id;
+          const b = thought.parentId < thought.id ? thought.id : thought.parentId;
+          existingEdges.add(`${a}:${b}`);
+        }
+      }
+      // Explicit relationships overlay as faded edges (same look as co-occurrence)
+      for (const rel of edgeRels) {
+        if (!idSet.has(rel.sourceId) || !idSet.has(rel.targetId)) continue;
+        const a = rel.sourceId < rel.targetId ? rel.sourceId : rel.targetId;
+        const b = rel.sourceId < rel.targetId ? rel.targetId : rel.sourceId;
+        const key = `${a}:${b}`;
+        if (existingEdges.has(key)) continue;
+        links.push({
+          source: rel.sourceId,
+          target: rel.targetId,
+          isLabelEdge: true,
+          labelName: rel.label?.name,
+          labelColor: rel.label?.color,
+        });
+        existingEdges.add(key);
+      }
+    } else {
+      // Graph mode: explicit directional relationships instead of hierarchy
+      for (const rel of edgeRels) {
+        if (!idSet.has(rel.sourceId) || !idSet.has(rel.targetId)) continue;
+        links.push({
+          source: rel.sourceId,
+          target: rel.targetId,
+          isDirected: true,
+          labelName: rel.label?.name,
+          labelColor: rel.label?.color,
+        });
+        const a = rel.sourceId < rel.targetId ? rel.sourceId : rel.targetId;
+        const b = rel.sourceId < rel.targetId ? rel.targetId : rel.sourceId;
         existingEdges.add(`${a}:${b}`);
       }
     }
@@ -126,8 +178,30 @@ export function NetworkView({ thoughts, nodeColors = {}, onSelectNode, onResetVi
       links.push({ source: src, target: tgt, isLabelEdge: true, labelName: name, labelColor: color, weight });
     }
 
+    if (mode === 'graph') {
+      // Selected node: filter to it + one-hop neighbours
+      if (focusedNodeId && idSet.has(focusedNodeId)) {
+        const visible = new Set<string>([focusedNodeId]);
+        for (const link of links) {
+          if (link.source === focusedNodeId) visible.add(link.target);
+          if (link.target === focusedNodeId) visible.add(link.source);
+        }
+        return {
+          nodes: nodes.filter((n) => visible.has(n.id)),
+          links: links.filter((l) => visible.has(l.source) && visible.has(l.target)),
+        };
+      }
+      // No selection: hide orphan nodes (no relationship edges at all)
+      const linked = new Set<string>();
+      for (const link of links) {
+        linked.add(link.source);
+        linked.add(link.target);
+      }
+      return { nodes: nodes.filter((n) => linked.has(n.id)), links };
+    }
+
     return { nodes, links };
-  }, [thoughts]);
+  }, [thoughts, mode, edgeRels, focusedNodeId]);
 
   // Zoom to fit after graph data changes
   useEffect(() => {
@@ -201,15 +275,48 @@ export function NetworkView({ thoughts, nodeColors = {}, onSelectNode, onResetVi
   }, []);
 
   const linkColor = useCallback((link: GraphLink) => {
+    // Graph mode: all relationship edges styled like mind-map hierarchy edges
+    if (mode === 'graph') return '#222222';
     return link.isLabelEdge ? 'rgba(200, 200, 200, 0.35)' : '#222222';
-  }, []);
+  }, [mode]);
 
   const linkWidth = useCallback((link: GraphLink) => {
+    if (mode === 'graph') return 0.4;
     return link.isLabelEdge ? 1 : 0.4;
+  }, [mode]);
+
+  const linkArrowLength = useCallback((link: GraphLink) => {
+    return link.isDirected ? 4 : 0;
+  }, []);
+
+  // Graph mode: render the label name on the link itself
+  const linkThreeObject = useCallback((link: GraphLink) => {
+    if (mode !== 'graph' || !link.labelName) return new Group();
+    const sprite = new SpriteText(link.labelName);
+    sprite.color = link.labelColor || '#666666';
+    sprite.fontFace = 'Syne, sans-serif';
+    sprite.textHeight = 2;
+    sprite.material.depthTest = false;
+    sprite.renderOrder = 3;
+    return sprite;
+  }, [mode]);
+
+  const linkPositionUpdate = useCallback((sprite: any, { start, end }: { start: any; end: any }) => {
+    if (sprite) {
+      sprite.position.set(
+        (start.x + end.x) / 2,
+        (start.y + end.y) / 2,
+        (start.z + end.z) / 2,
+      );
+    }
   }, []);
 
   if (thoughts.length === 0) {
     return <div className="network-view-empty">No thoughts yet</div>;
+  }
+
+  if (mode === 'graph' && graphData.nodes.length === 0) {
+    return <div className="network-view-empty">No relationships yet</div>;
   }
 
   return (
@@ -231,6 +338,11 @@ export function NetworkView({ thoughts, nodeColors = {}, onSelectNode, onResetVi
         }}
         linkColor={linkColor}
         linkWidth={linkWidth}
+        linkDirectionalArrowLength={linkArrowLength}
+        linkDirectionalArrowRelPos={0.92}
+        linkThreeObjectExtend={true}
+        linkThreeObject={linkThreeObject}
+        linkPositionUpdate={linkPositionUpdate}
         linkOpacity={0.4}
         backgroundColor="rgba(0,0,0,0)"
         showNavInfo={false}

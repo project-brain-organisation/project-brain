@@ -140,6 +140,22 @@ export class ApiClient {
     return this.post('set-label-edge', { userId, scope }, { labelId, isEdge });
   }
 
+  createRelationship(
+    userId: string,
+    params: { projectId: string; sourceId: string; targetId: string; labelId: string },
+    scope?: string,
+  ) {
+    return this.post('create-relationship', { userId, scope }, params);
+  }
+
+  listRelationships(
+    userId: string,
+    params: { projectId: string; kind?: 'hierarchy' | 'tag' | 'edge' },
+    scope?: string,
+  ) {
+    return this.post('list-relationships', { userId, scope }, params);
+  }
+
   setThoughtColor(userId: string, thoughtId: string, hex: string, scope?: string) {
     return this.post('set-thought-color', { userId, scope }, { thoughtId, hex });
   }
