@@ -40,7 +40,10 @@ function projectToRootNode(project: { id: string; name: string; color: string | 
 export function HomePage() {
   const { selectedRootId, setSelectedRootId } = useSelectedRoot();
   const { projects, loading: projectsLoading, createProject, renameProject, setProjectColor } = useProjects();
-  const { thoughts, edgeRelationships, loading, createThought, updateThought, setThoughtColor, removeThought } = useThoughts(selectedRootId);
+  const {
+    thoughts, edgeRelationships, loading, createThought, updateThought, setThoughtColor,
+    removeThought, createEdgeRelationship, removeEdgeRelationship,
+  } = useThoughts(selectedRootId);
   const [creating, setCreating] = useState(false);
   const [projectName, setProjectName] = useState('');
   // focusedNodeId drills into a child node within the selected project
@@ -242,6 +245,8 @@ export function HomePage() {
           projectId={selectedRootId}
           thoughts={thoughts}
           edgeRels={edgeRelationships}
+          onAdd={createEdgeRelationship}
+          onRemove={removeEdgeRelationship}
         />
       )}
     </div>

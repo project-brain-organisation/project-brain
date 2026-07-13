@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { notifyThoughtsChanged } from '../lib/thoughtsEvents';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../lib/queryClient';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -13,12 +14,13 @@ interface WorkspaceEvent {
 }
 
 /**
- * Subscribes to the workspace SSE stream and refreshes local data when
- * something changes OUTSIDE this tab (MCP tools, other sessions). Events with
- * source 'user' are ignored — the hooks already update state optimistically
- * for actions taken here, and notifyThoughtsChanged() covers cross-hook sync.
+ * Subscribes to the workspace SSE stream and invalidates the affected query
+ * when something changes OUTSIDE this tab (MCP tools, other sessions).
+ * Events with source 'user' are ignored — mutations here already patch the
+ * cache optimistically.
  */
 export function useWorkspaceEvents() {
+  const queryClient = useQueryClient();
   const retryGate = useRef(0);
 
   useEffect(() => {
@@ -34,9 +36,12 @@ export function useWorkspaceEvents() {
         const event = JSON.parse(e.data) as WorkspaceEvent;
         if (event.source !== 'mcp') return;
 
-        notifyThoughtsChanged();
-        if (event.type.startsWith('label') || event.type.startsWith('relationship')) {
-          window.dispatchEvent(new Event('labels-changed'));
+        if (event.type.startsWith('project')) {
+          queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+        } else {
+          queryClient.invalidateQueries({
+            queryKey: event.projectId ? queryKeys.workspace(event.projectId) : ['workspace'],
+          });
         }
       });
 
@@ -61,5 +66,5 @@ export function useWorkspaceEvents() {
       es?.close();
       es = null;
     };
-  }, []);
+  }, [queryClient]);
 }

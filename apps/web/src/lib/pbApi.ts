@@ -75,8 +75,12 @@ export const projectsApi = {
 // ── Thoughts ────────────────────────────────────────────────────────
 
 export interface CreateThoughtInput {
+  /** Client-generated uuid — lets the UI insert optimistically. */
+  id?: string;
   projectId: string;
   body: string;
+  /** Parent thought; the hierarchy relationship is created server-side in the same tx. */
+  parentId?: string;
   title?: string;
   color?: string;
   canvasX?: number;
@@ -98,7 +102,8 @@ export const thoughtsApi = {
   listByProject: (projectId: string) =>
     api.get<Thought[]>(`/api/workspace/thoughts?projectId=${projectId}`),
   get: (id: string) => api.get<Thought>(`/api/workspace/thoughts/${id}`),
-  create: (data: CreateThoughtInput) => api.post<Thought>('/api/workspace/thoughts', data),
+  create: (data: CreateThoughtInput) =>
+    api.post<Thought & { parentRelationshipId: string | null }>('/api/workspace/thoughts', data),
   update: (id: string, data: UpdateThoughtInput) =>
     api.patch<Thought>(`/api/workspace/thoughts/${id}`, data),
   setColor: (id: string, color: string) =>
@@ -112,11 +117,25 @@ export const thoughtsApi = {
 export const labelsApi = {
   listByProject: (projectId: string) =>
     api.get<Label[]>(`/api/workspace/labels/project/${projectId}`),
-  create: (data: { projectId: string; name: string; color?: string; isEdge?: boolean }) =>
+  create: (data: { id?: string; projectId: string; name: string; color?: string; isEdge?: boolean }) =>
     api.post<Label>('/api/workspace/labels', data),
   update: (id: string, data: Partial<{ name: string; color: string; isEdge: boolean }>) =>
     api.patch<Label>(`/api/workspace/labels/${id}`, data),
   remove: (id: string) => api.delete<{ deleted: boolean }>(`/api/workspace/labels/${id}`),
+};
+
+// ── Workspace snapshot ──────────────────────────────────────────────
+
+export interface WorkspaceSnapshot {
+  thoughts: Thought[];
+  relationships: Relationship[];
+  labels: Label[];
+}
+
+export const workspaceApi = {
+  /** The whole per-project workspace in one request / one RLS transaction. */
+  snapshot: (projectId: string) =>
+    api.get<WorkspaceSnapshot>(`/api/workspace/snapshot?projectId=${projectId}`),
 };
 
 // ── Relationships ───────────────────────────────────────────────────
@@ -127,6 +146,7 @@ export const relationshipsApi = {
       `/api/workspace/relationships?projectId=${projectId}${kind ? `&kind=${kind}` : ''}`,
     ),
   create: (data: {
+    id?: string;
     projectId: string;
     sourceId: string;
     targetId: string;

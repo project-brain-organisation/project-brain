@@ -1,0 +1,23 @@
+.toasts {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 340px;
+}
+
+.toast {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-left: 2px solid #e05555;
+  border-radius: 2px;
+  padding: 10px 12px;
+  cursor: pointer;
+}

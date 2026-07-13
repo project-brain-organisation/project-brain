@@ -7,6 +7,7 @@ import { useWorkspaceEvents } from '../hooks/useWorkspaceEvents';
 import { useSelectedRoot } from '../contexts/SelectedRootContext';
 import { Login } from './Login';
 import { McpDialog } from './McpDialog';
+import { Toasts } from './Toasts';
 import './Shell.css';
 
 export function Shell() {
@@ -50,6 +51,7 @@ export function Shell() {
         <Outlet />
       </main>
       <McpDialog open={mcpOpen} onClose={() => setMcpOpen(false)} />
+      <Toasts />
     </div>
   );
 }

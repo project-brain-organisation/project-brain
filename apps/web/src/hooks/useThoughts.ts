@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   thoughtsApi,
   relationshipsApi,
-  labelsApi,
   type Thought as ApiThought,
   type Relationship,
-  type Label,
+  type WorkspaceSnapshot,
 } from '../lib/pbApi';
-import { onThoughtsChanged, notifyThoughtsChanged } from '../lib/thoughtsEvents';
+import { queryKeys } from '../lib/queryClient';
+import { useWorkspaceMutation, useWorkspaceQuery } from './query-utils';
 
 /**
  * Client-side thought shape.
@@ -16,6 +17,9 @@ import { onThoughtsChanged, notifyThoughtsChanged } from '../lib/thoughtsEvents'
  * target = parent) and edge-labels as tag relationships onto isEdge labels.
  * This hook joins those back onto each thought so components keep the simple
  * v1-era shape (parentId, isRoot, edgeLabels).
+ *
+ * All state lives in the shared ['workspace', projectId] snapshot cache;
+ * mutations patch it optimistically (rollback + toast on failure).
  */
 /** An explicit directional relationship (kind='edge') joined with its label. */
 export interface EdgeRelationship {
@@ -74,145 +78,200 @@ function toClientThought(
   };
 }
 
+const EMPTY = { thoughts: [] as Thought[], edgeRelationships: [] as EdgeRelationship[] };
+
+function deriveViews(snap?: WorkspaceSnapshot) {
+  if (!snap) return EMPTY;
+
+  const hierarchyBySource = new Map<string, Relationship>();
+  for (const rel of snap.relationships) {
+    if (rel.kind === 'hierarchy') hierarchyBySource.set(rel.sourceId, rel);
+  }
+
+  const labelById = new Map(snap.labels.map((l) => [l.id, l]));
+  const edgeLabelsByThought = new Map<string, Array<{ id: string; name: string; color: string }>>();
+  const edgeRelationships: EdgeRelationship[] = [];
+  for (const rel of snap.relationships) {
+    if (rel.kind === 'tag') {
+      const label = labelById.get(rel.targetId);
+      if (!label?.isEdge) continue;
+      let arr = edgeLabelsByThought.get(rel.sourceId);
+      if (!arr) {
+        arr = [];
+        edgeLabelsByThought.set(rel.sourceId, arr);
+      }
+      arr.push({ id: label.id, name: label.name, color: label.color });
+    } else if (rel.kind === 'edge') {
+      const label = rel.labelId ? labelById.get(rel.labelId) : undefined;
+      edgeRelationships.push({
+        id: rel.id,
+        sourceId: rel.sourceId,
+        targetId: rel.targetId,
+        label: label ? { id: label.id, name: label.name, color: label.color } : null,
+      });
+    }
+  }
+
+  return {
+    thoughts: snap.thoughts.map((row) => toClientThought(row, hierarchyBySource, edgeLabelsByThought)),
+    edgeRelationships,
+  };
+}
+
 export function useThoughts(projectId?: string) {
-  const [thoughts, setThoughts] = useState<Thought[]>([]);
-  const [edgeRelationships, setEdgeRelationships] = useState<EdgeRelationship[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const query = useWorkspaceQuery(projectId);
+  const { thoughts, edgeRelationships } = useMemo(() => deriveViews(query.data), [query.data]);
 
-  const fetchAll = useCallback(async () => {
-    if (!projectId) {
-      setThoughts([]);
-      setEdgeRelationships([]);
-      setLoading(false);
-      return [];
-    }
-    try {
-      const [rows, hierarchyRels, tagRels, edgeRels, labels] = await Promise.all([
-        thoughtsApi.listByProject(projectId),
-        relationshipsApi.listByProject(projectId, 'hierarchy'),
-        relationshipsApi.listByProject(projectId, 'tag'),
-        relationshipsApi.listByProject(projectId, 'edge'),
-        labelsApi.listByProject(projectId),
-      ]);
-
-      const hierarchyBySource = new Map<string, Relationship>();
-      for (const rel of hierarchyRels) hierarchyBySource.set(rel.sourceId, rel);
-
-      const edgeLabelById = new Map<string, Label>();
-      for (const label of labels) {
-        if (label.isEdge) edgeLabelById.set(label.id, label);
+  const createMutation = useWorkspaceMutation(
+    projectId,
+    'Create thought',
+    async ({ row, parentId, tempRelId }: { row: ApiThought; parentId?: string; tempRelId: string }) => {
+      const created = await thoughtsApi.create({
+        id: row.id,
+        projectId: row.projectId,
+        body: row.body,
+        title: row.title,
+        canvasX: row.canvasX ?? undefined,
+        canvasY: row.canvasY ?? undefined,
+        parentId,
+      });
+      // Swap the placeholder hierarchy-rel id for the server-generated one —
+      // the only piece of a create the client can't generate itself.
+      if (created.parentRelationshipId) {
+        queryClient.setQueryData<WorkspaceSnapshot>(queryKeys.workspace(row.projectId), (snap) => snap && {
+          ...snap,
+          relationships: snap.relationships.map((r) =>
+            r.id === tempRelId ? { ...r, id: created.parentRelationshipId! } : r),
+        });
       }
-      const edgeLabelsByThought = new Map<string, Array<{ id: string; name: string; color: string }>>();
-      for (const rel of tagRels) {
-        const label = edgeLabelById.get(rel.targetId);
-        if (!label) continue;
-        let arr = edgeLabelsByThought.get(rel.sourceId);
-        if (!arr) {
-          arr = [];
-          edgeLabelsByThought.set(rel.sourceId, arr);
-        }
-        arr.push({ id: label.id, name: label.name, color: label.color });
-      }
-
-      const labelById = new Map(labels.map((l) => [l.id, l]));
-      setEdgeRelationships(edgeRels.map((rel) => {
-        const label = rel.labelId ? labelById.get(rel.labelId) : undefined;
-        return {
-          id: rel.id,
-          sourceId: rel.sourceId,
-          targetId: rel.targetId,
-          label: label ? { id: label.id, name: label.name, color: label.color } : null,
-        };
-      }));
-
-      const data = rows.map((row) => toClientThought(row, hierarchyBySource, edgeLabelsByThought));
-      setThoughts(data);
-      return data;
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchAll().catch((err) => console.error('Failed to load thoughts:', err));
-  }, [fetchAll]);
-
-  useEffect(() => {
-    return onThoughtsChanged(() => {
-      fetchAll().catch((err) => console.error('Failed to refresh thoughts:', err));
-    });
-  }, [fetchAll]);
+    },
+    (snap, { row, parentId, tempRelId }) => ({
+      ...snap,
+      thoughts: [row, ...snap.thoughts],
+      relationships: parentId
+        ? [...snap.relationships, {
+            id: tempRelId, projectId: row.projectId, ownerId: row.ownerId,
+            sourceId: row.id, targetId: parentId, kind: 'hierarchy' as const,
+            labelId: null, createdAt: '', updatedAt: '',
+          }]
+        : snap.relationships,
+    }),
+  );
 
   const createThought = useCallback(async (
     body: string,
     opts?: { canvasX?: number; canvasY?: number; title?: string; parentId?: string },
   ) => {
     if (!projectId) throw new Error('No project selected');
-
-    const row = await thoughtsApi.create({
+    // A parent that is a real thought becomes a hierarchy edge (created
+    // server-side in the same tx). The project id itself means "top level".
+    const parentId = opts?.parentId && opts.parentId !== projectId ? opts.parentId : undefined;
+    const row: ApiThought = {
+      id: crypto.randomUUID(),
       projectId,
+      ownerId: '',
+      color: null,
       body,
-      title: opts?.title,
-      canvasX: opts?.canvasX,
-      canvasY: opts?.canvasY,
-    });
-
-    // A parent that is a real thought becomes a hierarchy edge (source = child).
-    // The project id itself means "top level" — no edge.
-    let parentId: string | null = null;
-    let parentRelationshipId: string | null = null;
-    if (opts?.parentId && opts.parentId !== projectId) {
-      const rel = await relationshipsApi.create({
-        projectId,
-        sourceId: row.id,
-        targetId: opts.parentId,
-        kind: 'hierarchy',
-      });
-      parentId = opts.parentId;
-      parentRelationshipId = rel.id;
-    }
-
-    const thought: Thought = {
-      ...toClientThought(row, new Map(), new Map()),
-      parentId,
-      parentRelationshipId,
+      title: opts?.title ?? '',
+      contentHash: null,
+      canvasX: opts?.canvasX ?? null,
+      canvasY: opts?.canvasY ?? null,
+      width: null,
+      height: null,
     };
-    setThoughts((prev) => [thought, ...prev]);
-    notifyThoughtsChanged();
-    return thought;
-  }, [projectId]);
+    createMutation.mutate({ row, parentId, tempRelId: crypto.randomUUID() });
+    return { ...toClientThought(row, new Map(), new Map()), parentId: parentId ?? null };
+  }, [projectId, createMutation.mutate]);
 
-  const updateThought = useCallback(async (
+  const updateMutation = useWorkspaceMutation(
+    projectId,
+    'Update thought',
+    ({ id, data }: { id: string; data: Partial<ApiThought> }) => thoughtsApi.update(id, data),
+    (snap, { id, data }) => ({
+      ...snap,
+      thoughts: snap.thoughts.map((t) => (t.id === id ? { ...t, ...data } : t)),
+    }),
+  );
+
+  const updateThought = useCallback((
     id: string,
     data: { title?: string; body?: string; canvasX?: number; canvasY?: number; width?: number; height?: number },
+  ) => updateMutation.mutate({ id, data }), [updateMutation.mutate]);
+
+  const colorMutation = useWorkspaceMutation(
+    projectId,
+    'Set colour',
+    ({ id, color }: { id: string; color: string }) => thoughtsApi.setColor(id, color),
+    (snap, { id, color }) => ({
+      ...snap,
+      thoughts: snap.thoughts.map((t) => (t.id === id ? { ...t, color } : t)),
+    }),
+  );
+
+  const setThoughtColor = useCallback(
+    (id: string, color: string) => colorMutation.mutate({ id, color }),
+    [colorMutation.mutate],
+  );
+
+  const removeMutation = useWorkspaceMutation(
+    projectId,
+    'Delete thought',
+    (id: string) => thoughtsApi.remove(id),
+    // Entity delete cascades to relationships server-side; mirror it in the cache.
+    (snap, id) => ({
+      ...snap,
+      thoughts: snap.thoughts.filter((t) => t.id !== id),
+      relationships: snap.relationships.filter((r) => r.sourceId !== id && r.targetId !== id),
+    }),
+  );
+
+  const removeThought = useCallback((id: string) => removeMutation.mutate(id), [removeMutation.mutate]);
+
+  const addRelMutation = useWorkspaceMutation(
+    projectId,
+    'Add relationship',
+    (rel: Relationship) => relationshipsApi.create({
+      id: rel.id, projectId: rel.projectId, sourceId: rel.sourceId,
+      targetId: rel.targetId, kind: 'edge', labelId: rel.labelId ?? undefined,
+    }),
+    (snap, rel) => ({ ...snap, relationships: [...snap.relationships, rel] }),
+  );
+
+  const createEdgeRelationship = useCallback((
+    sourceId: string,
+    targetId: string,
+    label: { id: string; name: string; color: string },
   ) => {
-    const row = await thoughtsApi.update(id, data);
-    setThoughts((prev) => prev.map((t) => (t.id === id ? { ...t, ...row } : t)));
-    notifyThoughtsChanged();
-    return row;
-  }, []);
+    if (!projectId) return;
+    addRelMutation.mutate({
+      id: crypto.randomUUID(), projectId, ownerId: '', sourceId, targetId,
+      kind: 'edge', labelId: label.id, createdAt: '', updatedAt: '',
+    });
+  }, [projectId, addRelMutation.mutate]);
 
-  const setThoughtColor = useCallback(async (id: string, color: string) => {
-    setThoughts((prev) => prev.map((t) => (t.id === id ? { ...t, color } : t)));
-    await thoughtsApi.setColor(id, color);
-    notifyThoughtsChanged();
-  }, []);
+  const removeRelMutation = useWorkspaceMutation(
+    projectId,
+    'Remove relationship',
+    (id: string) => relationshipsApi.remove(id),
+    (snap, id) => ({ ...snap, relationships: snap.relationships.filter((r) => r.id !== id) }),
+  );
 
-  const removeThought = useCallback(async (id: string) => {
-    await thoughtsApi.remove(id);
-    setThoughts((prev) => prev.filter((t) => t.id !== id));
-    notifyThoughtsChanged();
-  }, []);
+  const removeEdgeRelationship = useCallback(
+    (id: string) => removeRelMutation.mutate(id),
+    [removeRelMutation.mutate],
+  );
 
   return {
     thoughts,
     edgeRelationships,
-    loading,
+    loading: !!projectId && query.isPending,
     createThought,
     updateThought,
     setThoughtColor,
     removeThought,
-    refresh: fetchAll,
+    createEdgeRelationship,
+    removeEdgeRelationship,
+    refresh: query.refetch,
   };
 }

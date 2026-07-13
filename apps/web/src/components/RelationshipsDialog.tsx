@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { relationshipsApi } from '../lib/pbApi';
-import { notifyThoughtsChanged } from '../lib/thoughtsEvents';
 import { useLabels } from '../hooks/useLabels';
 import type { Thought, EdgeRelationship } from '../hooks/useThoughts';
 // Shared overlay/dialog chrome (.mcp-overlay, .mcp-dialog, header classes)
@@ -14,6 +12,9 @@ interface Props {
   projectId: string;
   thoughts: Thought[];
   edgeRels: EdgeRelationship[];
+  // Optimistic mutations owned by useThoughts (failures roll back + toast there).
+  onAdd: (sourceId: string, targetId: string, label: { id: string; name: string; color: string }) => void;
+  onRemove: (relationshipId: string) => void;
 }
 
 function thoughtName(thought: Thought | undefined): string {
@@ -23,25 +24,11 @@ function thoughtName(thought: Thought | undefined): string {
   return snippet || 'Untitled';
 }
 
-/** The API throws Error(responseBody); pull Nest's message out if it's JSON. */
-function errorMessage(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed.message === 'string') return parsed.message;
-  } catch {
-    // not JSON — fall through
-  }
-  return raw || 'Something went wrong';
-}
-
-export function RelationshipsDialog({ open, onClose, projectId, thoughts, edgeRels }: Props) {
+export function RelationshipsDialog({ open, onClose, projectId, thoughts, edgeRels, onAdd, onRemove }: Props) {
   const { labels, loading: labelsLoading } = useLabels(open ? projectId : undefined);
   const [sourceId, setSourceId] = useState('');
   const [labelId, setLabelId] = useState('');
   const [targetId, setTargetId] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const edgeLabels = useMemo(() => labels.filter((l) => l.isEdge), [labels]);
 
@@ -63,33 +50,15 @@ export function RelationshipsDialog({ open, onClose, projectId, thoughts, edgeRe
     ),
   );
 
-  const canAdd = !busy && sourceId && labelId && targetId && sourceId !== targetId && !isDuplicate;
+  const canAdd = sourceId && labelId && targetId && sourceId !== targetId && !isDuplicate;
 
-  async function handleAdd() {
-    if (!canAdd) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await relationshipsApi.create({ projectId, sourceId, targetId, kind: 'edge', labelId });
-      setSourceId('');
-      setLabelId('');
-      setTargetId('');
-      notifyThoughtsChanged();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDelete(relId: string) {
-    setError(null);
-    try {
-      await relationshipsApi.remove(relId);
-      notifyThoughtsChanged();
-    } catch (err) {
-      setError(errorMessage(err));
-    }
+  function handleAdd() {
+    const label = labels.find((l) => l.id === labelId);
+    if (!canAdd || !label) return;
+    onAdd(sourceId, targetId, { id: label.id, name: label.name, color: label.color });
+    setSourceId('');
+    setLabelId('');
+    setTargetId('');
   }
 
   return createPortal(
@@ -130,7 +99,7 @@ export function RelationshipsDialog({ open, onClose, projectId, thoughts, edgeRe
               </span>
               <button
                 className="rd-remove"
-                onClick={() => handleDelete(rel.id)}
+                onClick={() => onRemove(rel.id)}
                 title="Delete relationship"
               >
                 &times;
@@ -188,7 +157,6 @@ export function RelationshipsDialog({ open, onClose, projectId, thoughts, edgeRe
         )}
 
         {isDuplicate && <p className="rd-hint rd-hint--duplicate">This relationship already exists.</p>}
-        {error && <p className="rd-error">{error}</p>}
       </div>
     </div>,
     document.body,
