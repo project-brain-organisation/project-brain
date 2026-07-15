@@ -66,7 +66,7 @@ export class ApiClient {
 
   createThought(
     userId: string,
-    params: { body: string; title?: string; projectId: string },
+    params: { body: string; title?: string; projectId: string; parentId?: string },
     scope?: string,
   ) {
     return this.post('create-thought', { userId, scope }, params);

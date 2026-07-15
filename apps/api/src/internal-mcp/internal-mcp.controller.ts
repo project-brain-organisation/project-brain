@@ -75,12 +75,12 @@ export class InternalMcpController {
   @Post('create-thought')
   createThought(
     @Req() req: Request,
-    @Body() body: { body: string; title?: string; projectId: string },
+    @Body() body: { body: string; title?: string; projectId: string; parentId?: string },
   ) {
     const userId = this.userIdFromHeaders(req);
     return this.thoughtsService.create(
       userId,
-      { body: body.body, title: body.title, projectId: body.projectId },
+      { body: body.body, title: body.title, projectId: body.projectId, parentId: body.parentId },
       'mcp',
     );
   }

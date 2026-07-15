@@ -144,6 +144,26 @@ describe('create_thought tool', () => {
     assert.equal(captured.projectId, uuidA);
   });
 
+  it('forwards parentId for sub-thoughts', async () => {
+    let captured: { parentId?: string } = {};
+    const tool = createCreateThoughtTool({
+      createThought: async (_userId, params) => {
+        captured = params;
+        return okResult;
+      },
+    });
+
+    const args = tool.parseArguments({ body: 'Child', projectId: uuidA, parentId: uuidB });
+    await tool.execute({ userId: 'u1' }, args);
+
+    assert.equal(captured.parentId, uuidB);
+  });
+
+  it('rejects a non-uuid parentId', () => {
+    const tool = createCreateThoughtTool({ createThought: async () => okResult });
+    assert.throws(() => tool.parseArguments({ body: 'x', projectId: uuidA, parentId: 'nope' }));
+  });
+
   it('rejects missing body', () => {
     const tool = createCreateThoughtTool({ createThought: async () => okResult });
     assert.throws(() => tool.parseArguments({ title: 'x', projectId: uuidA }));

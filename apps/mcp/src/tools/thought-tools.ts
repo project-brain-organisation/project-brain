@@ -36,7 +36,7 @@ export function createListThoughtsTool(deps: ListThoughtsDeps): ToolDefinition {
 export interface CreateThoughtDeps {
   createThought: (
     userId: string,
-    params: { body: string; title?: string; projectId: string },
+    params: { body: string; title?: string; projectId: string; parentId?: string },
     scope?: string,
   ) => Promise<ApiResult>;
 }
@@ -44,11 +44,14 @@ export interface CreateThoughtDeps {
 export function createCreateThoughtTool(deps: CreateThoughtDeps): ToolDefinition {
   return defineTool({
     name: 'create_thought',
-    description: 'Create a new thought in a project',
+    description:
+      'Create a new thought in a project. Pass parentId to nest it as a sub-thought of an ' +
+      'existing thought in the same project.',
     schema: z.object({
       body: z.string().min(1),
       title: z.string().optional(),
       projectId: z.string().uuid(),
+      parentId: z.string().uuid().optional(),
     }),
     execute: (ctx, args) => deps.createThought(ctx.userId, args, ctx.scope),
   });
