@@ -352,7 +352,7 @@ export function HomePage() {
         )}
         <RelationshipsDialog
           open={!!relOpen}
-          onClose={closeRel}
+          onClose={() => closeRel()}
           projectId={selectedRootId}
           thoughts={thoughts}
           edgeRels={edgeRelationships}

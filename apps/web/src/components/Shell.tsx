@@ -76,7 +76,7 @@ export function Shell() {
         />
       )}
       {isMobile && drawerOpen && (
-        <div className="shell-scrim" onClick={closeDrawer} />
+        <div className="shell-scrim" onClick={() => closeDrawer()} />
       )}
       <Sidebar
         drawerOpen={isMobile ? !!drawerOpen : undefined}
