@@ -28,6 +28,27 @@ export class ProjectsController {
     return this.projectsService.findAllByUser(req.user.userId);
   }
 
+  // Must precede @Get(':id') so 'public' isn't captured as an id.
+  @Get('public')
+  findPublic(@Req() req: any) {
+    return this.projectsService.findPublic(req.user.userId);
+  }
+
+  @Post(':id/clone')
+  clone(@Req() req: any, @Param('id') id: string) {
+    return this.projectsService.clone(req.user.userId, id);
+  }
+
+  @Post(':id/subscription')
+  subscribe(@Req() req: any, @Param('id') id: string) {
+    return this.projectsService.subscribe(req.user.userId, id);
+  }
+
+  @Delete(':id/subscription')
+  unsubscribe(@Req() req: any, @Param('id') id: string) {
+    return this.projectsService.unsubscribe(req.user.userId, id);
+  }
+
   @Get(':id')
   findOne(@Req() req: any, @Param('id') id: string) {
     return this.projectsService.findOne(req.user.userId, id);

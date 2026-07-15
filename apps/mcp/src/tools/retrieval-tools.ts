@@ -14,11 +14,18 @@ export interface RememberDeps {
 export function createRememberTool(deps: RememberDeps): ToolDefinition {
   return defineTool({
     name: 'remember',
-    description: 'Search the knowledge base by semantic similarity',
+    description:
+      'Search the knowledge base by semantic similarity. By default searches only ' +
+      'the projects the user owns; to search a public graph they added (a ' +
+      '"subscriber" project from list_projects), pass its projectId explicitly.',
     schema: z.object({
       query: z.string().min(1),
       n: z.number().int().min(1).max(20).default(5),
-      projectId: z.string().uuid().optional().describe('Optional: restrict the search to one project'),
+      projectId: z
+        .string()
+        .uuid()
+        .optional()
+        .describe('Optional: restrict the search to one project. Required to search a subscribed public graph.'),
     }),
     execute: (ctx, { query, n, projectId }) =>
       deps.remember(ctx.userId, query, n, projectId, ctx.scope),

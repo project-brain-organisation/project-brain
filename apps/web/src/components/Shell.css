@@ -3,6 +3,18 @@
   height: 100%;
 }
 
+.shell--mobile {
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.shell-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 95;
+}
+
 .shell-main {
   flex: 1;
   min-width: 0;

@@ -87,8 +87,9 @@
 /* ─── Individual label card — white, padded ────────────── */
 .lp-card {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
   width: 100%;
   padding: 14px 18px;
   background: #ffffff;
@@ -98,6 +99,12 @@
   text-align: left;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
+/* Title + colour dot + edge/remove buttons on one line */
+.lp-card-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
 .lp-card:hover {
   border-color: rgba(0, 0, 0, 0.16);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
@@ -106,8 +113,33 @@
   border-color: rgba(0, 0, 0, 0.18);
   background: #fdfcfa;
 }
+/* The None card has no second row — keep it a simple horizontal card */
 .lp-card--none {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
   border-style: dashed;
+}
+.lp-card--selected {
+  border-color: #7b6bb5;
+  box-shadow: 0 0 0 2px rgba(123, 107, 181, 0.25);
+  background: #fdfcff;
+}
+
+/* ─── Target picker (below the row, for the selected edge label) ── */
+.lp-target-select {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  outline: none;
+}
+.lp-target-select:focus {
+  border-color: #7b6bb5;
 }
 
 /* ─── Dot (shared between card and new-card) ───────────── */
@@ -331,4 +363,40 @@
 }
 .lp-new-add:hover {
   opacity: 0.85;
+}
+
+/* ─── Primary Add (footer) ─────────────────────────────── */
+.lp-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+.lp-add-primary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 10px 28px;
+  background: var(--text);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+.lp-add-primary:hover {
+  opacity: 0.85;
+}
+.lp-add-primary:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Mobile keeps dialogs terse — no explanatory description */
+@media (max-width: 768px) {
+  .lp-desc {
+    display: none;
+  }
 }

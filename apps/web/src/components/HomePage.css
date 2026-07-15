@@ -11,6 +11,25 @@
   min-width: 0;
   overflow: hidden;
   border-right: 1px solid var(--border);
+  position: relative;
+}
+
+/* "View only" badge shown for subscribed (read-only) public graphs. */
+.home-page-readonly-chip {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 5;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  pointer-events: none;
 }
 
 .home-page-network {
@@ -89,7 +108,16 @@
   border-color: var(--accent, #646cff);
 }
 
-/* ── Network area controls (top-right overlay) ── */
+/* ── Network area controls ── */
+
+/* Mode toggle: top-left of the graph pane (desktop) — leading-edge alignment,
+ * matching the mobile placement; Relationships anchors the opposite corner */
+.network-toggle-wrap {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+}
 
 .network-controls {
   position: absolute;
@@ -156,4 +184,53 @@
 .network-rel-btn:hover {
   color: var(--text);
   border-color: var(--muted);
+}
+
+/* ── Mobile: one full-bleed screen at a time, fade-through on tab switch ── */
+
+.home-page--mobile {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.mobile-screen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  /* Material fade-through: incoming screen fades in after a 90ms beat */
+  animation: mobile-screen-in 210ms cubic-bezier(0, 0, 0.2, 1) 90ms both;
+}
+
+@keyframes mobile-screen-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Graph screen: flex column — the in-flow bottom sheet pushes the graph up */
+.mobile-screen--graph {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-graph-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Mobile mode toggle: positions the shared desktop-styled .network-view-toggle
+ * top-left (M3 leading-edge alignment), with a small hit-area bump for touch */
+.mobile-mode-toggle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 10;
+}
+
+.mobile-mode-toggle .network-toggle-btn {
+  font-size: 10px;
+  padding: 8px 12px;
 }

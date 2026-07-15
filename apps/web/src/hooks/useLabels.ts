@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { labelsApi, relationshipsApi, type Label, type Relationship } from '../lib/pbApi';
+import { thoughtName } from '../lib/thoughtName';
 import { useWorkspaceMutation, useWorkspaceQuery } from './query-utils';
 
 export type { Label };
@@ -18,6 +19,15 @@ export interface ThoughtLabel {
   color: string;
   isEdge: boolean;
   relationshipId: string;
+}
+
+/** An outgoing edge relationship (kind='edge') from a thought, joined with its
+ *  label and target name, for rendering as a chip pair on the thought card. */
+export interface ThoughtEdge {
+  id: string;
+  targetId: string;
+  targetName: string;
+  label: { id: string; name: string; color: string } | null;
 }
 
 const NO_LABELS: Label[] = [];
@@ -103,6 +113,23 @@ export function useThoughtLabels(thoughtId?: string, projectId?: string) {
     });
   }, [query.data, thoughtId]);
 
+  const edgeRelationships = useMemo((): ThoughtEdge[] => {
+    const snap = query.data;
+    if (!snap || !thoughtId) return [];
+    const labelById = new Map(snap.labels.map((l) => [l.id, l]));
+    const thoughtById = new Map(snap.thoughts.map((t) => [t.id, t]));
+    return snap.relationships.flatMap((rel): ThoughtEdge[] => {
+      if (rel.kind !== 'edge' || rel.sourceId !== thoughtId) return [];
+      const label = rel.labelId ? labelById.get(rel.labelId) : undefined;
+      return [{
+        id: rel.id,
+        targetId: rel.targetId,
+        targetName: thoughtName(thoughtById.get(rel.targetId)),
+        label: label ? { id: label.id, name: label.name, color: label.color } : null,
+      }];
+    });
+  }, [query.data, thoughtId]);
+
   const assignMutation = useWorkspaceMutation(
     projectId,
     'Assign label',
@@ -138,6 +165,7 @@ export function useThoughtLabels(thoughtId?: string, projectId?: string) {
 
   return {
     thoughtLabels,
+    edgeRelationships,
     loading: !!projectId && query.isPending,
     assignLabel,
     unassignLabel,

@@ -6,6 +6,7 @@
  */
 export * from './entities.schema';
 export * from './project-meta.schema';
+export * from './project-subscription.schema';
 export * from './users.schema';
 export * from './thought.schema';
 export * from './label.schema';

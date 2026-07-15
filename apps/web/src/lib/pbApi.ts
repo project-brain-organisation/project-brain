@@ -14,9 +14,26 @@ import { api } from './api';
 
 // ── Types (mirror the drizzle rows the API returns) ────────────────
 
+export type ProjectRole = 'owner' | 'subscriber';
+
 export interface Project {
   id: string;
   ownerId: string;
+  name: string;
+  emoji: string | null;
+  color: string | null;
+  isPublic: boolean;
+  /** 'owner' = created by me; 'subscriber' = a public graph I added. */
+  role: ProjectRole;
+  /** Present on subscribed graphs — the owner's display name (for the "view only" chip). */
+  ownerName?: string;
+}
+
+/** A public graph as surfaced in the Discover dialog. */
+export interface PublicProject {
+  id: string;
+  ownerId: string;
+  ownerName: string;
   name: string;
   emoji: string | null;
   color: string | null;
@@ -64,12 +81,17 @@ export interface Relationship {
 
 export const projectsApi = {
   list: () => api.get<Project[]>('/api/projects'),
+  listPublic: () => api.get<PublicProject[]>('/api/projects/public'),
   get: (id: string) => api.get<Project>(`/api/projects/${id}`),
   create: (data: { name: string; emoji?: string; isPublic?: boolean }) =>
     api.post<Project>('/api/projects', data),
   update: (id: string, data: Partial<{ name: string; emoji: string; isPublic: boolean; color: string | null }>) =>
     api.patch<Project>(`/api/projects/${id}`, data),
   remove: (id: string) => api.delete<{ deleted: boolean }>(`/api/projects/${id}`),
+  /** Deep-copy any readable graph (own or public) into a new project I own. */
+  clone: (id: string) => api.post<Project>(`/api/projects/${id}/clone`),
+  subscribe: (id: string) => api.post<Project>(`/api/projects/${id}/subscription`),
+  unsubscribe: (id: string) => api.delete<{ deleted: boolean }>(`/api/projects/${id}/subscription`),
 };
 
 // ── Thoughts ────────────────────────────────────────────────────────

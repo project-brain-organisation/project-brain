@@ -11,6 +11,8 @@ interface Props {
   onDelete?: (id: string) => void;
   onNavigate?: (id: string) => void;
   autoFocusBody?: boolean;
+  /** Subscribed public graph: render content but no editing affordances. */
+  readOnly?: boolean;
 }
 
 function formatTime(iso: string): string {
@@ -24,10 +26,11 @@ function formatTime(iso: string): string {
   return `${day} ${month} ${time}`;
 }
 
-export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocusBody }: Props) {
-  const { thoughtLabels, assignLabel, unassignLabel, refresh } = useThoughtLabels(thought.id, thought.projectId);
+export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocusBody, readOnly }: Props) {
+  const { thoughtLabels, edgeRelationships, assignLabel, unassignLabel, refresh } = useThoughtLabels(thought.id, thought.projectId);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
 
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingBody, setEditingBody] = useState(!!autoFocusBody);
@@ -84,6 +87,13 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
 
   function openPicker(labelId?: string) {
     setEditingLabelId(labelId ?? null);
+    setEditingEdgeId(null);
+    setPickerOpen(true);
+  }
+
+  function openEdgePicker(edgeRelId: string) {
+    setEditingLabelId(null);
+    setEditingEdgeId(edgeRelId);
     setPickerOpen(true);
   }
 
@@ -99,7 +109,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
             →
           </button>
         )}
-        {onDelete && (
+        {onDelete && !readOnly && (
           <button
             className="thought-card-action thought-card-action--delete"
             onClick={() => onDelete(thought.id)}
@@ -125,10 +135,10 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
           />
         ) : (
           thought.title ? (
-            <span className="thought-card-tag" onClick={() => setEditingTitle(true)}>
+            <span className="thought-card-tag" onClick={() => !readOnly && setEditingTitle(true)}>
               {thought.title}
             </span>
-          ) : editingBody ? (
+          ) : readOnly ? null : editingBody ? (
             <span
               className="thought-card-tag thought-card-tag--placeholder"
               onMouseDown={(e) => e.preventDefault()}
@@ -156,9 +166,9 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
       ) : (
         <div
           className="thought-card-text"
-          onClick={() => setEditingBody(true)}
+          onClick={() => !readOnly && setEditingBody(true)}
         >
-          {thought.body || <span className="thought-card-placeholder">Click to add text...</span>}
+          {thought.body || (readOnly ? null : <span className="thought-card-placeholder">Click to add text...</span>)}
         </div>
       )}
 
@@ -168,20 +178,42 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
             key={tl.id}
             className="thought-card-label"
             style={{ borderColor: tl.color, color: tl.color }}
-            onClick={() => openPicker(tl.id)}
+            onClick={() => !readOnly && openPicker(tl.id)}
           >
             <span className="thought-card-label-dot" style={{ background: tl.color }} />
             {tl.name}
           </button>
         ))}
-        <button className="thought-card-label-add" onClick={() => openPicker()}>+</button>
+        {edgeRelationships.map((er) => (
+          <span key={er.id} className="thought-card-edge">
+            <button
+              className="thought-card-label thought-card-label--edge"
+              style={er.label ? { borderColor: er.label.color, color: er.label.color } : undefined}
+              onClick={() => !readOnly && openEdgePicker(er.id)}
+            >
+              {er.label && <span className="thought-card-label-dot" style={{ background: er.label.color }} />}
+              {er.label?.name ?? 'edge'}
+            </button>
+            <button
+              className="thought-card-edge-target"
+              onClick={() => onNavigate?.(er.targetId)}
+              disabled={!onNavigate}
+              title={`Go to ${er.targetName}`}
+            >
+              → {er.targetName}
+            </button>
+          </span>
+        ))}
+        {!readOnly && <button className="thought-card-label-add" onClick={() => openPicker()}>+</button>}
       </div>
       {pickerOpen && createPortal(
         <LabelPicker
           thoughtLabels={thoughtLabels}
+          sourceThoughtId={thought.id}
           onAssign={assignLabel}
           onUnassign={unassignLabel}
           editingLabelId={editingLabelId}
+          editingEdgeRelId={editingEdgeId}
           onClose={() => setPickerOpen(false)}
           onRefresh={refresh}
         />,

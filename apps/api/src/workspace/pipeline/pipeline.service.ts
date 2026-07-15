@@ -91,11 +91,16 @@ export class PipelineService {
   }
 
   /**
-   * Ownership-gated semantic search. Runs inside asUser(userId) so that RLS
-   * policies on the chunks table see the correct app.current_user_id and scope
-   * rows to the authenticated user. projectId only narrows the search; when
-   * omitted, all of the user's projects are searched (RLS still hides other
-   * tenants' rows).
+   * Semantic search, scoped through asUser(userId) so RLS sees the tenant.
+   *
+   * Scope rules:
+   *   - projectId given  → search that project. RLS makes this work for a graph
+   *     the user owns OR a public one they can read (subscribed/discoverable),
+   *     so this is how you deliberately search a public graph.
+   *   - projectId omitted → search only the user's OWNED chunks. Without the
+   *     explicit owner filter the chunks_public_read policy would fold every
+   *     public project on the platform into an unscoped search — surprising and
+   *     unwanted. Public graphs are opt-in per projectId.
    */
   async semanticSearch(
     userId: string,
@@ -105,7 +110,9 @@ export class PipelineService {
   ) {
     const clampedN = Math.min(Math.max(n, 1), 20);
     const [queryVector] = await this.embeddingService.embed([query]);
-    const projectFilter = projectId ? sql`c.project_id = ${projectId}` : sql`TRUE`;
+    const projectFilter = projectId
+      ? sql`c.project_id = ${projectId}`
+      : sql`c.owner_id = ${userId}`;
 
     return this.db.asUser(userId, async (tx) => {
       const results = await tx.execute(sql`

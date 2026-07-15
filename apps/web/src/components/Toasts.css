@@ -9,6 +9,16 @@
   max-width: 340px;
 }
 
+/* Mobile: snackbars must sit above the tab bar and FAB, never behind them */
+@media (max-width: 768px) {
+  .toasts {
+    left: 16px;
+    right: 16px;
+    max-width: none;
+    bottom: calc(60px + env(safe-area-inset-bottom) + 88px);
+  }
+}
+
 .toast {
   font-family: var(--font-mono);
   font-size: 12px;

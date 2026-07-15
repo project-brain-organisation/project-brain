@@ -1,13 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { isUniqueViolation } from '../../database/pg-errors';
-import { ProjectsService } from '../../projects/projects.service';
+import { ProjectsService, READ_ONLY_GRAPH_MESSAGE } from '../../projects/projects.service';
 import { WorkspaceEventsService } from '../gateway/workspace-events.service';
 import { entities, relationships } from '../../database/schema/index';
 import { CreateRelationshipDto } from './dto/create-relationship.dto';
@@ -166,6 +167,7 @@ export class RelationshipsService {
 
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
     const relationship = await this.findOne(userId, id);
+    if (relationship.ownerId !== userId) throw new ForbiddenException(READ_ONLY_GRAPH_MESSAGE);
 
     await this.db.asUser(userId, async (tx) =>
       tx.delete(relationships).where(eq(relationships.id, id)),

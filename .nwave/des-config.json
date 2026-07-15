@@ -1,0 +1,11 @@
+{
+  "rigor": {
+    "tdd_phases": ["RED", "GREEN", "COMMIT"],
+    "agent_model": "inherit",
+    "reviewer_model": "inherit",
+    "review_enabled": true,
+    "double_review": false,
+    "mutation_enabled": true,
+    "refactor_pass": true
+  }
+}

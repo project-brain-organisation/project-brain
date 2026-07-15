@@ -10,6 +10,8 @@ export default function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route path="/" element={<HomePage />} />
+            {/* Mobile Graph tab; on desktop it renders the same two-pane view */}
+            <Route path="/graph" element={<HomePage />} />
           </Route>
         </Routes>
       </BrowserRouter>

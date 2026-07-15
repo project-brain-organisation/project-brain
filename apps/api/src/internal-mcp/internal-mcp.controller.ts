@@ -42,6 +42,9 @@ export class InternalMcpController {
   @Post('list-projects')
   listProjects(@Req() req: Request) {
     const userId = this.userIdFromHeaders(req);
+    // Includes subscribed public graphs, each tagged role: 'owner' | 'subscriber'
+    // so the MCP tool can mark subscribed graphs read-only. Reads work through
+    // RLS public_read; writes are rejected with READ_ONLY_GRAPH_MESSAGE.
     return this.projectsService.findAllByUser(userId);
   }
 

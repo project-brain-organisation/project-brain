@@ -16,7 +16,7 @@ import { useWorkspaceMutation, useWorkspaceQuery } from './query-utils';
  * The v2 API stores hierarchy in the relationships table (source = child,
  * target = parent) and edge-labels as tag relationships onto isEdge labels.
  * This hook joins those back onto each thought so components keep the simple
- * v1-era shape (parentId, isRoot, edgeLabels).
+ * v1-era shape (parentId, isRoot).
  *
  * All state lives in the shared ['workspace', projectId] snapshot cache;
  * mutations patch it optimistically (rollback + toast on failure).
@@ -47,7 +47,6 @@ export interface Thought {
   /** Not returned by the v2 thoughts endpoint (lives on entities); '' when unknown. */
   createdAt: string;
   updatedAt: string;
-  edgeLabels: Array<{ id: string; name: string; color: string }>;
   /** Hierarchy relationship id linking this thought to its parent, if any. */
   parentRelationshipId: string | null;
 }
@@ -55,7 +54,6 @@ export interface Thought {
 function toClientThought(
   row: ApiThought,
   hierarchyBySource: Map<string, Relationship>,
-  edgeLabelsByThought: Map<string, Array<{ id: string; name: string; color: string }>>,
 ): Thought {
   const parentRel = hierarchyBySource.get(row.id);
   return {
@@ -73,7 +71,6 @@ function toClientThought(
     height: row.height,
     createdAt: '',
     updatedAt: '',
-    edgeLabels: edgeLabelsByThought.get(row.id) ?? [],
     parentRelationshipId: parentRel ? parentRel.id : null,
   };
 }
@@ -89,31 +86,20 @@ function deriveViews(snap?: WorkspaceSnapshot) {
   }
 
   const labelById = new Map(snap.labels.map((l) => [l.id, l]));
-  const edgeLabelsByThought = new Map<string, Array<{ id: string; name: string; color: string }>>();
   const edgeRelationships: EdgeRelationship[] = [];
   for (const rel of snap.relationships) {
-    if (rel.kind === 'tag') {
-      const label = labelById.get(rel.targetId);
-      if (!label?.isEdge) continue;
-      let arr = edgeLabelsByThought.get(rel.sourceId);
-      if (!arr) {
-        arr = [];
-        edgeLabelsByThought.set(rel.sourceId, arr);
-      }
-      arr.push({ id: label.id, name: label.name, color: label.color });
-    } else if (rel.kind === 'edge') {
-      const label = rel.labelId ? labelById.get(rel.labelId) : undefined;
-      edgeRelationships.push({
-        id: rel.id,
-        sourceId: rel.sourceId,
-        targetId: rel.targetId,
-        label: label ? { id: label.id, name: label.name, color: label.color } : null,
-      });
-    }
+    if (rel.kind !== 'edge') continue;
+    const label = rel.labelId ? labelById.get(rel.labelId) : undefined;
+    edgeRelationships.push({
+      id: rel.id,
+      sourceId: rel.sourceId,
+      targetId: rel.targetId,
+      label: label ? { id: label.id, name: label.name, color: label.color } : null,
+    });
   }
 
   return {
-    thoughts: snap.thoughts.map((row) => toClientThought(row, hierarchyBySource, edgeLabelsByThought)),
+    thoughts: snap.thoughts.map((row) => toClientThought(row, hierarchyBySource)),
     edgeRelationships,
   };
 }
@@ -181,7 +167,7 @@ export function useThoughts(projectId?: string) {
       height: null,
     };
     createMutation.mutate({ row, parentId, tempRelId: crypto.randomUUID() });
-    return { ...toClientThought(row, new Map(), new Map()), parentId: parentId ?? null };
+    return { ...toClientThought(row, new Map()), parentId: parentId ?? null };
   }, [projectId, createMutation.mutate]);
 
   const updateMutation = useWorkspaceMutation(

@@ -60,6 +60,13 @@ export const labels = pgTable(
       using: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
       withCheck: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
     }),
+    // Public-project read access — see thought.schema.ts for rationale.
+    pgPolicy('labels_public_read', {
+      as: 'permissive',
+      for: 'select',
+      to: appUser,
+      using: sql`exists (select 1 from project_meta where project_meta.id = ${t.projectId} and project_meta.is_public = true)`,
+    }),
   ],
 ).enableRLS();
 

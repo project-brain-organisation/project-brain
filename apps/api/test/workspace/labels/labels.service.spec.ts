@@ -273,7 +273,7 @@ describe('LabelsService', () => {
     // Step 04-01: assertOwnership removed from update path (RLS using clause enforces
     // isolation). Test now verifies labels-first query and successful update only.
     it('B3: queries labels table first (not entities) and applies the update', async () => {
-      const labelRow = { id: 'lbl-1', projectId: 'proj-xyz', name: 'Tag', color: '#000', isEdge: false };
+      const labelRow = { id: 'lbl-1', projectId: 'proj-xyz', ownerId: 'user-1', name: 'Tag', color: '#000', isEdge: false };
       const { dbService, fromCalls } = makeDbWithLabelRow(labelRow);
       const projectsService = makeProjectsServiceMock();
       const events = makeWorkspaceEventsService();
@@ -290,7 +290,7 @@ describe('LabelsService', () => {
 
   describe('remove()', () => {
     it('B3: queries labels table first for scope; still deletes from entities (cascade)', async () => {
-      const labelRow = { id: 'lbl-1', projectId: 'proj-xyz', name: 'Tag', color: '#000', isEdge: false };
+      const labelRow = { id: 'lbl-1', projectId: 'proj-xyz', ownerId: 'user-1', name: 'Tag', color: '#000', isEdge: false };
       const { tx, dbService, fromCalls } = makeDbWithLabelRow(labelRow);
       const projectsService = makeProjectsServiceMock();
       const service = new LabelsService(dbService, projectsService, makeWorkspaceEventsService());

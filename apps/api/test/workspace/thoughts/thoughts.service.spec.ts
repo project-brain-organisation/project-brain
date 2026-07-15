@@ -339,7 +339,7 @@ describe('WorkspaceThoughtsService', () => {
     // bypass: fallback — Jest example-based test; fast-check not installed in this workspace
     it('resolves scope from thought row — no entities query first (AC3)', async () => {
       // update does two asUser calls: one select, one update
-      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: null };
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', ownerId: 'user-1', body: 'content', title: '', color: null };
       const updatedRow = { ...thoughtRow, color: '#ff0000' };
 
       let asUserCallCount = 0;
@@ -372,7 +372,7 @@ describe('WorkspaceThoughtsService', () => {
     });
 
     it('clears thoughts.color when patched with color: null', async () => {
-      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: '#ff0000' };
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', ownerId: 'user-1', body: 'content', title: '', color: '#ff0000' };
       const updatedRow = { ...thoughtRow, color: null };
 
       const tx = {
@@ -425,7 +425,7 @@ describe('WorkspaceThoughtsService', () => {
     }
 
     it('patches only the provided fields and skips rechunk when body is unchanged', async () => {
-      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: null };
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', ownerId: 'user-1', body: 'content', title: '', color: null };
       const updatedRow = { ...thoughtRow, title: 'New title', canvasX: 10 };
       const { dbService, setSpy } = makeUpdateSetup(thoughtRow, updatedRow);
       const pipeline = makePipelineService();
@@ -439,7 +439,7 @@ describe('WorkspaceThoughtsService', () => {
     });
 
     it('re-chunks via the pipeline when body actually changes', async () => {
-      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'old body', title: '', color: null };
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', ownerId: 'user-1', body: 'old body', title: '', color: null };
       const updatedRow = { ...thoughtRow, body: 'new body' };
       const { dbService } = makeUpdateSetup(thoughtRow, updatedRow);
       const pipeline = makePipelineService();
@@ -467,13 +467,38 @@ describe('WorkspaceThoughtsService', () => {
 
       await expect(service.update('user-1', 'ghost', { title: 'x' })).rejects.toThrow(NotFoundException);
     });
+
+    it('throws ForbiddenException when the thought belongs to another owner (read-only public graph)', async () => {
+      // findOne succeeds because the thought is in a public graph the user can
+      // read, but its ownerId is someone else's — the write must be rejected
+      // rather than silently no-op under RLS.
+      const foreignThought = { id: 'thought-1', projectId: 'pub-proj', ownerId: 'other-user', body: 'x', title: '', color: null };
+      const updateSpy = jest.fn().mockReturnValue(makeUpdateChain([]));
+      const tx = {
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue([foreignThought]),
+        }),
+        update: updateSpy,
+        delete: jest.fn(),
+        insert: jest.fn(),
+      };
+      const asUser = jest.fn((_userId: string, cb: (tx: typeof tx) => Promise<unknown>) => cb(tx));
+      const dbService = { asUser } as unknown as DatabaseService;
+      const service = new ThoughtsService(dbService, makeProjectsService(), makePipelineService(), makeWorkspaceEventsService());
+
+      await expect(service.update('user-1', 'thought-1', { body: 'hijack' })).rejects.toThrow(ForbiddenException);
+      // The UPDATE must never be attempted for a read-only graph.
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
   });
 
   // ── B6: NotFoundException from thought lookup ────────────────────
 
   describe('remove', () => {
     it('deletes from the entities table (not thoughts directly), relying on cascade', async () => {
-      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', body: 'content', title: '', color: null };
+      const thoughtRow = { id: 'thought-1', projectId: 'proj-1', ownerId: 'user-1', body: 'content', title: '', color: null };
 
       const deleteSpy = jest.fn().mockReturnValue(makeDeleteChain());
       const tx = {

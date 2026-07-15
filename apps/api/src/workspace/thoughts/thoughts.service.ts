@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -8,7 +9,7 @@ import {
 import { eq } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { isUniqueViolation } from '../../database/pg-errors';
-import { ProjectsService } from '../../projects/projects.service';
+import { ProjectsService, READ_ONLY_GRAPH_MESSAGE } from '../../projects/projects.service';
 import { PipelineService } from '../pipeline/pipeline.service';
 import { WorkspaceEventsService } from '../gateway/workspace-events.service';
 import { entities, relationships, thoughts } from '../../database/schema/index';
@@ -118,6 +119,9 @@ export class ThoughtsService {
     source: 'user' | 'mcp' = 'user',
   ) {
     const thought = await this.findOne(userId, id);
+    // findOne succeeds for a readable public thought; block the write so RLS
+    // doesn't silently no-op (0 rows) and leave callers thinking it worked.
+    if (thought.ownerId !== userId) throw new ForbiddenException(READ_ONLY_GRAPH_MESSAGE);
 
     const [updated] = await this.db.asUser(userId, async (tx) =>
       tx
@@ -190,6 +194,7 @@ export class ThoughtsService {
 
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
     const thought = await this.findOne(userId, id);
+    if (thought.ownerId !== userId) throw new ForbiddenException(READ_ONLY_GRAPH_MESSAGE);
 
     await this.db.asUser(userId, async (tx) =>
       tx.delete(entities).where(eq(entities.id, id)),

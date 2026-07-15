@@ -8,7 +8,10 @@ export interface ListProjectsDeps {
 export function createListProjectsTool(deps: ListProjectsDeps): ToolDefinition {
   return defineTool({
     name: 'list_projects',
-    description: 'List all projects',
+    description:
+      "List the user's projects. Each has a `role`: \"owner\" (fully editable) or " +
+      '"subscriber" (a public graph the user added — readable and searchable, but ' +
+      'creating/editing/deleting in it will be rejected as read-only).',
     schema: z.object({}),
     execute: (ctx) => deps.listProjects(ctx.userId, ctx.scope),
   });

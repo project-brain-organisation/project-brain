@@ -67,6 +67,16 @@ export const thoughts = pgTable(
       using: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
       withCheck: sql`${t.ownerId} = current_setting('app.current_user_id', true)::uuid`,
     }),
+    // Anyone may read the contents of a public project (writes stay owner-only:
+    // the isolation policy's withCheck is the sole write gate). The subquery on
+    // project_meta itself runs under RLS, where project_meta_public_read
+    // reveals exactly the public rows.
+    pgPolicy('thoughts_public_read', {
+      as: 'permissive',
+      for: 'select',
+      to: appUser,
+      using: sql`exists (select 1 from project_meta where project_meta.id = ${t.projectId} and project_meta.is_public = true)`,
+    }),
   ],
 ).enableRLS();
 

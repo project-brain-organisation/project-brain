@@ -57,10 +57,26 @@ carrying `project_id` and `type`. Subtype tables share the same `id` as PK+FK:
   - edge: canvas edge, may carry `labelId`
   - Per-kind invariants enforced by partial unique indexes
 - **chunks** — text chunks + `vector(768)` embedding; scoped by `projectId`, `thoughtId`, `ownerId`
+- **project_subscriptions** — `(userId, projectId)` PK; "public graphs I added to my
+  sidebar" (see `features/public-graphs.md`). RLS: user sees only their own rows.
 - **users** / **credentials** / **mcp_auth_codes** / **mcp_refresh_tokens** — auth tables
+
+**Public graphs:** `project_meta.isPublic` + a `project_meta_public_read` policy make a
+project's row world-readable; matching `*_public_read` SELECT policies on thoughts / labels /
+relationships / chunks (keyed on the parent project's `is_public`) expose its *contents* to
+any authenticated user, read-only (no write policy for non-owners, so RLS blocks mutations
+at the DB layer). Subscribing never grants access on its own — access is purely a function of
+`is_public`, so re-privatising instantly hides a graph from subscribers.
 
 Schema lives in [src/database/schema/](../apps/api/src/database/schema/). Creating a thought/label/
 project is a **two-step insert** (entities row, then subtype row) inside one transaction.
+
+**Cloning** (`ProjectsService.clone`) deep-copies a whole graph in one `asUser(caller)`
+transaction: reads land through the caller's owner/`*_public_read` policies, every inserted row
+is stamped `owner_id = caller` (so withCheck passes and the clone is decoupled from the source),
+and a single old→new id map spanning thoughts + labels rewrites every relationship
+`source/target/label` reference. Chunk vectors are copied verbatim (no re-embed). The clone
+starts private regardless of the source's visibility.
 
 ### Multi-tenancy — RLS + AsyncLocalStorage (important)
 
@@ -98,7 +114,13 @@ project-type FK and rejects writes to public projects you don't own).
 
 ### Domains / routes
 
-- **projects** — CRUD, `/api/projects`
+- **projects** — CRUD, `/api/projects`. Also `GET /api/projects/public` (all public graphs
+  bar your own), `POST`/`DELETE /api/projects/:id/subscription` (add/remove a public graph),
+  `POST /api/projects/:id/clone` (deep-copy any *readable* graph — own or public — into a
+  new project the caller owns; see below), and `findAllByUser` returns owned ∪ subscribed rows
+  tagged `role: 'owner' | 'subscriber'` (the internal MCP path passes `includeSubscribed:false`
+  to stay owned-only). **New projects default to `isPublic:true`** (public-by-default; the
+  sidebar lock/globe toggle makes them private) — clones are the exception, starting private.
 - **workspace/thoughts** — CRUD + color, `/api/workspace/thoughts`
 - **workspace/labels** — CRUD, `/api/workspace/labels`
 - **workspace/relationships** — create/list/remove + recursive-CTE descendants
@@ -153,6 +175,12 @@ Standalone Express server bridging claude.ai ↔ the API. Entry: [main.ts](../ap
   [defineTool](../apps/mcp/src/tools/tool-contract.ts), so schema and handler can't drift.
 - **[ApiClient](../apps/mcp/src/api-client.ts):** thin fetch wrapper; forwards `x-mcp-internal-key` +
   `x-mcp-user-id` (+ scope) to `/api/internal/mcp/*`.
+- **Public/subscribed graphs:** `list_projects` returns subscribed public graphs too, each tagged
+  `role: 'owner' | 'subscriber'`. Read + `remember` work on them via RLS `*_public_read`; writes
+  throw `READ_ONLY_GRAPH_MESSAGE` (from `assertOwnership` and the `ownerId` guard on
+  thoughts/labels/relationships `update`/`remove`). `remember` defaults to owned-only — pass a
+  subscribed graph's `projectId` to search it (avoids folding all platform-public chunks into an
+  unscoped search). See `features/public-graphs-followups.md`.
 - Config validated at startup in [config.ts](../apps/mcp/src/config.ts).
 
 ---
@@ -181,6 +209,15 @@ React 19 SPA. Entry [main.tsx](../apps/web/src/main.tsx) → [App.tsx](../apps/w
   [ThoughtCard](../apps/web/src/components/ThoughtCard.tsx), [LabelPicker](../apps/web/src/components/LabelPicker.tsx),
   [Sidebar](../apps/web/src/components/Sidebar.tsx), [Shell](../apps/web/src/components/Shell.tsx),
   [McpDialog](../apps/web/src/components/McpDialog.tsx), [Login](../apps/web/src/components/Login.tsx).
+- **Mobile (≤768px):** a separate single-screen layout, conditionally *mounted* via
+  [useIsMobile](../apps/web/src/hooks/useIsMobile.ts) (never CSS-hidden — keeps the WebGL loop off).
+  Top bar + the Sidebar as a left nav drawer + a two-tab bottom bar routed at `/` (Thoughts, with a
+  new-thought FAB) and `/graph` (graph + node-preview bottom sheet with an anchored "Add relationship"
+  FAB). Dismissible surfaces (drawer / sheet / relationships dialog) live in router history state via
+  [useHistoryFlag](../apps/web/src/hooks/useHistoryFlag.ts) so the Android back gesture closes them.
+  The mobile **Thoughts** screen has its own drill-down — a history-backed `'drill'` path so a
+  back-swipe drills up one level (see `features/thought-canvas-drill-navigation.md`); desktop keeps
+  the in-memory `focusedNodeId` state. Details and rationale: `features/mobile-ui.md`.
 
 ---
 

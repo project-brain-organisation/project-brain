@@ -55,6 +55,23 @@ body {
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+/* Mobile: fixed app shell — no page scroll, no pull-to-refresh; inner panes scroll */
+@media (max-width: 768px) {
+  html, body, #root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+  /* No scrollbar tracks on mobile — native browsers use transient overlay
+     scrollbars; emulated/desktop-touch ones would render classic tracks */
+  * {
+    scrollbar-width: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* ─── Scrollbar styling ──────────────────────────────── */

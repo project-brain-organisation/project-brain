@@ -1,8 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { isUniqueViolation } from '../../database/pg-errors';
-import { ProjectsService } from '../../projects/projects.service';
+import { ProjectsService, READ_ONLY_GRAPH_MESSAGE } from '../../projects/projects.service';
 import { WorkspaceEventsService } from '../gateway/workspace-events.service';
 import { entities, labels } from '../../database/schema/index';
 import { CreateLabelDto } from './dto/create-label.dto';
@@ -89,6 +94,7 @@ export class LabelsService {
 
   async update(userId: string, id: string, dto: UpdateLabelDto, source: 'user' | 'mcp' = 'user') {
     const label = await this.findOne(userId, id);
+    if (label.ownerId !== userId) throw new ForbiddenException(READ_ONLY_GRAPH_MESSAGE);
 
     const [updated] = await this.db.asUser(userId, async (tx) =>
       tx
@@ -113,6 +119,7 @@ export class LabelsService {
 
   async remove(userId: string, id: string, source: 'user' | 'mcp' = 'user') {
     const label = await this.findOne(userId, id);
+    if (label.ownerId !== userId) throw new ForbiddenException(READ_ONLY_GRAPH_MESSAGE);
 
     await this.db.asUser(userId, async (tx) =>
       tx.delete(entities).where(eq(entities.id, id)),

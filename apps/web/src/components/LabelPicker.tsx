@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useLabels } from '../hooks/useLabels';
+import { useThoughts } from '../hooks/useThoughts';
 import { useSelectedRoot } from '../contexts/SelectedRootContext';
+import { thoughtName } from '../lib/thoughtName';
 import type { ThoughtLabel } from '../hooks/useLabels';
 import './LabelPicker.css';
 
@@ -16,24 +18,59 @@ const PRESET_COLORS = [
 
 interface Props {
   thoughtLabels: ThoughtLabel[];
+  /** The thought the picker was opened from — source of any edge relationship. */
+  sourceThoughtId: string;
   onAssign: (labelId: string) => void;
   onUnassign: (labelId: string) => void;
   editingLabelId?: string | null;
+  /** Set when the picker was opened from an edge-relationship chip — offers removal. */
+  editingEdgeRelId?: string | null;
   onClose: () => void;
   onRefresh?: () => void;
 }
 
-export function LabelPicker({ thoughtLabels, onAssign, onUnassign, editingLabelId, onClose, onRefresh }: Props) {
+export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassign, editingLabelId, editingEdgeRelId, onClose, onRefresh }: Props) {
   const { selectedRootId } = useSelectedRoot();
   const { labels, createLabel, updateLabel, removeLabel } = useLabels(selectedRootId);
+  const { thoughts, edgeRelationships, createEdgeRelationship, removeEdgeRelationship } = useThoughts(selectedRootId);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
   const [swatchTarget, setSwatchTarget] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // Nothing is written until Add: selecting a label just highlights it.
+  const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+  // Each edge label keeps its own chosen target, since every edge row shows a picker.
+  const [targetByLabel, setTargetByLabel] = useState<Record<string, string>>({});
   const dialogRef = useRef<HTMLDivElement>(null);
   const swatchRef = useRef<HTMLDivElement>(null);
 
   const assignedIds = new Set(thoughtLabels.map((tl) => tl.id));
+  const selectedLabel = labels.find((l) => l.id === selectedLabelId) ?? null;
+  const selectedTarget = selectedLabel ? targetByLabel[selectedLabel.id] ?? '' : '';
+
+  // Target options for an edge relationship: every other thought, sorted by name.
+  const targetOptions = useMemo(
+    () => thoughts
+      .filter((t) => t.id !== sourceThoughtId)
+      .sort((a, b) => thoughtName(a).localeCompare(thoughtName(b))),
+    [thoughts, sourceThoughtId],
+  );
+
+  // DB has a unique (source, target, label) index for edges — block up front.
+  const isDuplicateEdge = Boolean(
+    selectedLabel?.isEdge && selectedTarget &&
+    edgeRelationships.some(
+      (r) => r.sourceId === sourceThoughtId && r.targetId === selectedTarget && r.label?.id === selectedLabelId,
+    ),
+  );
+
+  const canAdd = Boolean(
+    selectedLabel && (
+      selectedLabel.isEdge
+        ? selectedTarget && !isDuplicateEdge
+        : editingLabelId || !assignedIds.has(selectedLabel.id)
+    ),
+  );
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -59,19 +96,26 @@ export function LabelPicker({ thoughtLabels, onAssign, onUnassign, editingLabelI
   async function handleCreate() {
     const trimmed = newName.trim();
     if (!trimmed) return;
+    // New labels are never edge labels, so this selects a plain tag ready to Add.
     const label = await createLabel(trimmed, newColor);
-    onAssign(label.id);
+    setSelectedLabelId(label.id);
     setNewName('');
     setNewColor(PRESET_COLORS[0]);
-    onClose();
   }
 
   function handleSelect(labelId: string) {
-    if (editingLabelId) {
-      onUnassign(editingLabelId);
-    }
-    if (!assignedIds.has(labelId)) {
-      onAssign(labelId);
+    setSelectedLabelId(labelId);
+  }
+
+  function handleAdd() {
+    if (!selectedLabel || !canAdd) return;
+    if (selectedLabel.isEdge) {
+      createEdgeRelationship(sourceThoughtId, selectedTarget, {
+        id: selectedLabel.id, name: selectedLabel.name, color: selectedLabel.color,
+      });
+    } else {
+      if (editingLabelId) onUnassign(editingLabelId);
+      if (!assignedIds.has(selectedLabel.id)) onAssign(selectedLabel.id);
     }
     onClose();
   }
@@ -95,6 +139,11 @@ export function LabelPicker({ thoughtLabels, onAssign, onUnassign, editingLabelI
     onClose();
   }
 
+  function handleRemoveEdge() {
+    if (editingEdgeRelId) removeEdgeRelationship(editingEdgeRelId);
+    onClose();
+  }
+
   function handleDotClick(e: React.MouseEvent, targetId: string) {
     e.stopPropagation();
     setSwatchTarget(swatchTarget === targetId ? null : targetId);
@@ -113,6 +162,22 @@ export function LabelPicker({ thoughtLabels, onAssign, onUnassign, editingLabelI
   function handleEdgeToggle(e: React.MouseEvent, labelId: string, currentIsEdge: boolean) {
     e.stopPropagation();
     updateLabel(labelId, { isEdge: !currentIsEdge });
+    if (!currentIsEdge) {
+      // Now an edge label — select it so Add targets it.
+      setSelectedLabelId(labelId);
+    } else {
+      // No longer an edge label — drop any target it held.
+      setTargetByLabel((prev) => {
+        const { [labelId]: _, ...rest } = prev;
+        return rest;
+      });
+    }
+  }
+
+  function handleTargetChange(labelId: string, value: string) {
+    setTargetByLabel((prev) => ({ ...prev, [labelId]: value }));
+    // Choosing a target expresses intent to add this edge — select its label.
+    setSelectedLabelId(labelId);
   }
 
   function renderSwatchPopover() {
@@ -143,8 +208,9 @@ export function LabelPicker({ thoughtLabels, onAssign, onUnassign, editingLabelI
           <div className="lp-header-text">
             <h2 className="lp-title">Labels</h2>
             <p className="lp-desc">
-              Select a label to assign it to this thought, or create a
-              new one below. Click a colour dot to change its colour.
+              Select a label, then press Add to attach it. For an edge label,
+              pick a target thought to link to. Click a colour dot to change
+              its colour.
             </p>
           </div>
           <button className="lp-close" onClick={onClose}>&times;</button>
@@ -162,43 +228,69 @@ export function LabelPicker({ thoughtLabels, onAssign, onUnassign, editingLabelI
             </button>
           )}
 
+          {editingEdgeRelId && (
+            <button className="lp-card lp-card--none" onClick={handleRemoveEdge}>
+              <span
+                className="lp-dot"
+                style={{ background: 'var(--border2)', border: '1px dashed var(--muted)' }}
+              />
+              <span className="lp-card-name">Remove relationship</span>
+            </button>
+          )}
+
           {labels.map((label) => {
             const isAssigned = assignedIds.has(label.id);
+            const isSelected = selectedLabelId === label.id;
             return (
               <div key={label.id} className="lp-card-wrap">
-                <button
-                  className={`lp-card ${isAssigned ? 'lp-card--active' : ''}`}
+                <div
+                  className={`lp-card ${isAssigned ? 'lp-card--active' : ''} ${isSelected ? 'lp-card--selected' : ''}`}
                   onClick={() => handleSelect(label.id)}
                 >
-                  <span
-                    className="lp-dot lp-dot--clickable"
-                    style={{ background: label.color }}
-                    onClick={(e) => handleDotClick(e, label.id)}
-                    title="Change colour"
-                  />
-                  <span className="lp-card-name">{label.name}</span>
-                  <button
-                    className={`lp-edge-toggle ${label.isEdge ? 'lp-edge-toggle--on' : ''}`}
-                    onClick={(e) => handleEdgeToggle(e, label.id, label.isEdge)}
-                    title={label.isEdge ? 'Edge label (click to disable)' : 'Not an edge label (click to enable)'}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <circle cx="4" cy="4" r="2" fill="currentColor" />
-                      <circle cx="12" cy="4" r="2" fill="currentColor" />
-                      <circle cx="8" cy="12" r="2" fill="currentColor" />
-                      <line x1="4" y1="4" x2="12" y2="4" stroke="currentColor" strokeWidth="1.2" />
-                      <line x1="4" y1="4" x2="8" y2="12" stroke="currentColor" strokeWidth="1.2" />
-                      <line x1="12" y1="4" x2="8" y2="12" stroke="currentColor" strokeWidth="1.2" />
-                    </svg>
-                  </button>
-                  <span
-                    className="lp-card-remove"
-                    onClick={(e) => handleRemove(e, label.id)}
-                    title="Delete label"
-                  >
-                    &times;
-                  </span>
-                </button>
+                  <div className="lp-card-row">
+                    <span
+                      className="lp-dot lp-dot--clickable"
+                      style={{ background: label.color }}
+                      onClick={(e) => handleDotClick(e, label.id)}
+                      title="Change colour"
+                    />
+                    <span className="lp-card-name">{label.name}</span>
+                    <button
+                      className={`lp-edge-toggle ${label.isEdge ? 'lp-edge-toggle--on' : ''}`}
+                      onClick={(e) => handleEdgeToggle(e, label.id, label.isEdge)}
+                      title={label.isEdge ? 'Edge label (click to disable)' : 'Not an edge label (click to enable)'}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="4" cy="4" r="2" fill="currentColor" />
+                        <circle cx="12" cy="4" r="2" fill="currentColor" />
+                        <circle cx="8" cy="12" r="2" fill="currentColor" />
+                        <line x1="4" y1="4" x2="12" y2="4" stroke="currentColor" strokeWidth="1.2" />
+                        <line x1="4" y1="4" x2="8" y2="12" stroke="currentColor" strokeWidth="1.2" />
+                        <line x1="12" y1="4" x2="8" y2="12" stroke="currentColor" strokeWidth="1.2" />
+                      </svg>
+                    </button>
+                    <span
+                      className="lp-card-remove"
+                      onClick={(e) => handleRemove(e, label.id)}
+                      title="Delete label"
+                    >
+                      &times;
+                    </span>
+                  </div>
+                  {label.isEdge && (
+                    <select
+                      className="lp-target-select"
+                      value={targetByLabel[label.id] ?? ''}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => handleTargetChange(label.id, e.target.value)}
+                    >
+                      <option value="">Target…</option>
+                      {targetOptions.map((t) => (
+                        <option key={t.id} value={t.id}>{thoughtName(t)}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
                 {swatchTarget === label.id && renderSwatchPopover()}
               </div>
             );
@@ -223,9 +315,16 @@ export function LabelPicker({ thoughtLabels, onAssign, onUnassign, editingLabelI
               placeholder="New label name"
               maxLength={100}
             />
-            <button className="lp-new-add" onClick={handleCreate}>Add</button>
+            <button className="lp-new-add" onClick={handleCreate}>Create</button>
           </div>
           {swatchTarget === '__new__' && renderSwatchPopover()}
+        </div>
+
+        {/* ── Primary action ──────────────────────────── */}
+        <div className="lp-footer">
+          <button className="lp-add-primary" onClick={handleAdd} disabled={!canAdd}>
+            Add
+          </button>
         </div>
 
         {/* ── Delete confirmation ──────────────────────── */}

@@ -162,6 +162,38 @@
   border-color: var(--dim);
   background: var(--surface2);
 }
+/* Edge relationship: label chip + a linked target chip */
+.thought-card-edge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.thought-card-edge-target {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 2px 7px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--dim);
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+  line-height: 1.4;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thought-card-edge-target:hover:not(:disabled) {
+  border-color: var(--dim);
+  color: var(--text);
+  background: var(--surface2);
+}
+.thought-card-edge-target:disabled {
+  cursor: default;
+}
 .thought-card-label-add {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -189,6 +221,21 @@
   .thought-card {
     padding: 8px 10px;
     border-radius: 4px;
+  }
+  /* Touch: no hover to reveal actions — keep them visible and tappable.
+   * Nudge up + square off so their center sits on the title line, matching desktop. */
+  .thought-card-actions {
+    opacity: 1;
+    top: 0;
+  }
+  .thought-card-action {
+    width: 30px;
+    height: 30px;
+    font-size: 17px;
+  }
+  .thought-card-label-add {
+    width: 28px;
+    height: 28px;
   }
   .thought-card-top {
     gap: 6px;

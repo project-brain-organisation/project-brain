@@ -15,7 +15,10 @@ describe('list_projects tool', () => {
   it('has correct metadata', () => {
     const tool = makeTool();
     assert.equal(tool.name, 'list_projects');
-    assert.equal(tool.description, 'List all projects');
+    // Description explains the owner/subscriber role split so clients know which
+    // projects are read-only.
+    assert.match(tool.description, /role/);
+    assert.match(tool.description, /read-only/);
     assert.deepEqual(tool.inputSchema.properties, {});
   });
 

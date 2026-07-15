@@ -3,6 +3,7 @@ import { errorMessage, toastError } from './toasts';
 
 export const queryKeys = {
   projects: ['projects'] as const,
+  publicProjects: ['public-projects'] as const,
   workspace: (projectId: string) => ['workspace', projectId] as const,
 };
 

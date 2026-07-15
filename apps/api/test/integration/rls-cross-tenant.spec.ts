@@ -40,6 +40,7 @@ import {
   labels,
   relationships,
   chunks,
+  projectSubscriptions,
 } from '../../src/database/schema/index';
 
 // ── DB availability guard ─────────────────────────────────────────────────────
@@ -63,6 +64,10 @@ let relationshipAId: string;
 let relationshipBId: string;
 let chunkAId: string;
 let chunkBId: string;
+let thoughtBPublicId: string;
+let labelBPublicId: string;
+let relationshipBPublicId: string;
+let chunkBPublicId: string;
 
 describeOrSkip('RLS cross-tenant isolation (integration)', () => {
   let app: TestingModule;
@@ -219,7 +224,8 @@ describeOrSkip('RLS cross-tenant isolation (integration)', () => {
       chunkIndex: 0,
     });
 
-    // Public project B
+    // Public project B — with a full set of content rows so the public_read
+    // policies on thoughts/labels/relationships/chunks can be exercised.
     projectBPublicId = crypto.randomUUID();
     await ownerDb.insert(entities).values({
       id: projectBPublicId,
@@ -231,6 +237,53 @@ describeOrSkip('RLS cross-tenant isolation (integration)', () => {
       ownerId: userBId,
       name: 'User B Public Project',
       isPublic: true,
+    });
+
+    thoughtBPublicId = crypto.randomUUID();
+    await ownerDb.insert(entities).values({
+      id: thoughtBPublicId,
+      projectId: projectBPublicId,
+      type: 'thought',
+    });
+    await ownerDb.insert(thoughts).values({
+      id: thoughtBPublicId,
+      projectId: projectBPublicId,
+      ownerId: userBId,
+      title: 'Public Thought B',
+      body: 'User B public body',
+    });
+
+    labelBPublicId = crypto.randomUUID();
+    await ownerDb.insert(entities).values({
+      id: labelBPublicId,
+      projectId: projectBPublicId,
+      type: 'label',
+    });
+    await ownerDb.insert(labels).values({
+      id: labelBPublicId,
+      projectId: projectBPublicId,
+      ownerId: userBId,
+      name: 'Public Label B',
+    });
+
+    relationshipBPublicId = crypto.randomUUID();
+    await ownerDb.insert(relationships).values({
+      id: relationshipBPublicId,
+      projectId: projectBPublicId,
+      ownerId: userBId,
+      sourceId: thoughtBPublicId,
+      targetId: labelBPublicId,
+      kind: 'tag',
+    });
+
+    chunkBPublicId = crypto.randomUUID();
+    await ownerDb.insert(chunks).values({
+      id: chunkBPublicId,
+      thoughtId: thoughtBPublicId,
+      projectId: projectBPublicId,
+      ownerId: userBId,
+      body: 'chunk body B public',
+      chunkIndex: 0,
     });
   });
 
@@ -255,33 +308,47 @@ describeOrSkip('RLS cross-tenant isolation (integration)', () => {
     expect(ids).not.toContain(projectBPrivateId);
   });
 
-  it('userA sees zero thoughts owned by userB', async () => {
+  // Scoped to userB's PRIVATE project: public-project content owned by userB is
+  // now legitimately visible via the *_public_read policies, so isolation is
+  // asserted against the private project specifically.
+  it("userA sees zero thoughts in userB's private project", async () => {
     const rows = await db.asUser(userAId, (tx) =>
-      tx.select().from(thoughts).where(eq(thoughts.ownerId, userBId)),
+      tx
+        .select()
+        .from(thoughts)
+        .where(and(eq(thoughts.ownerId, userBId), eq(thoughts.projectId, projectBPrivateId))),
     );
     expect(rows).toHaveLength(0);
   });
 
-  it('userA sees zero labels owned by userB', async () => {
+  it("userA sees zero labels in userB's private project", async () => {
     const rows = await db.asUser(userAId, (tx) =>
-      tx.select().from(labels).where(eq(labels.ownerId, userBId)),
+      tx
+        .select()
+        .from(labels)
+        .where(and(eq(labels.ownerId, userBId), eq(labels.projectId, projectBPrivateId))),
     );
     expect(rows).toHaveLength(0);
   });
 
-  it('userA sees zero relationships owned by userB', async () => {
+  it("userA sees zero relationships in userB's private project", async () => {
     const rows = await db.asUser(userAId, (tx) =>
       tx
         .select()
         .from(relationships)
-        .where(eq(relationships.ownerId, userBId)),
+        .where(
+          and(eq(relationships.ownerId, userBId), eq(relationships.projectId, projectBPrivateId)),
+        ),
     );
     expect(rows).toHaveLength(0);
   });
 
-  it('userA sees zero chunks owned by userB', async () => {
+  it("userA sees zero chunks in userB's private project", async () => {
     const rows = await db.asUser(userAId, (tx) =>
-      tx.select().from(chunks).where(eq(chunks.ownerId, userBId)),
+      tx
+        .select()
+        .from(chunks)
+        .where(and(eq(chunks.ownerId, userBId), eq(chunks.projectId, projectBPrivateId))),
     );
     expect(rows).toHaveLength(0);
   });
@@ -339,6 +406,61 @@ describeOrSkip('RLS cross-tenant isolation (integration)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(projectBPublicId);
     expect(rows[0].isPublic).toBe(true);
+  });
+
+  // ── Assertion 4b: public content is readable by a non-owner ─────────────────
+  it("userA can read the thoughts/labels/relationships/chunks of userB's public project", async () => {
+    const [t, l, r, c] = await db.asUser(userAId, (tx) =>
+      Promise.all([
+        tx.select().from(thoughts).where(eq(thoughts.projectId, projectBPublicId)),
+        tx.select().from(labels).where(eq(labels.projectId, projectBPublicId)),
+        tx.select().from(relationships).where(eq(relationships.projectId, projectBPublicId)),
+        tx.select().from(chunks).where(eq(chunks.projectId, projectBPublicId)),
+      ]),
+    );
+    expect(t.map((x) => x.id)).toContain(thoughtBPublicId);
+    expect(l.map((x) => x.id)).toContain(labelBPublicId);
+    expect(r.map((x) => x.id)).toContain(relationshipBPublicId);
+    expect(c.map((x) => x.id)).toContain(chunkBPublicId);
+  });
+
+  // ── Assertion 4c: private content stays hidden even to a would-be reader ─────
+  it("userA still cannot read the content of userB's private project", async () => {
+    const rows = await db.asUser(userAId, (tx) =>
+      tx.select().from(thoughts).where(eq(thoughts.projectId, projectBPrivateId)),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  // ── Assertion 4d: read access is read-only — writes to public content fail ───
+  it("userA cannot UPDATE a thought in userB's public project (no write policy)", async () => {
+    const result = await db.asUser(userAId, (tx) =>
+      tx
+        .update(thoughts)
+        .set({ body: 'hijacked' })
+        .where(eq(thoughts.id, thoughtBPublicId))
+        .returning(),
+    );
+    // The row is visible for SELECT but the owner-isolation USING clause hides
+    // it from UPDATE, so zero rows are affected (no error, no mutation).
+    expect(result).toHaveLength(0);
+  });
+
+  // ── Assertion 4e: subscriptions are per-user isolated ───────────────────────
+  it('a subscription row is visible only to its owning user', async () => {
+    await db.asUser(userAId, (tx) =>
+      tx.insert(projectSubscriptions).values({ userId: userAId, projectId: projectBPublicId }),
+    );
+    const aRows = await db.asUser(userAId, (tx) => tx.select().from(projectSubscriptions));
+    expect(aRows.map((r) => r.projectId)).toContain(projectBPublicId);
+
+    const bRows = await db.asUser(userBId, (tx) =>
+      tx
+        .select()
+        .from(projectSubscriptions)
+        .where(eq(projectSubscriptions.projectId, projectBPublicId)),
+    );
+    expect(bRows).toHaveLength(0);
   });
 
   // ── Assertion 5: withCheck rejects INSERT as wrong owner ────────────────────

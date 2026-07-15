@@ -1,10 +1,16 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useThoughts, type Thought } from '../hooks/useThoughts';
 import { useProjects } from '../hooks/useProjects';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { useHistoryFlag } from '../hooks/useHistoryFlag';
 import { useSelectedRoot } from '../contexts/SelectedRootContext';
 import { NetworkView, type NetworkViewMode } from './NetworkView';
 import { RelationshipsDialog } from './RelationshipsDialog';
 import { ThoughtsList } from './ThoughtsList';
+import { ThoughtSheet, type SheetState } from './ThoughtSheet';
+import { Fab } from './Fab';
+import { CoachMark } from './CoachMark';
 import './HomePage.css';
 
 const DEFAULT_NODE_COLOR = '#e8a838';
@@ -32,14 +38,13 @@ function projectToRootNode(project: { id: string; name: string; color: string | 
     height: null,
     createdAt: '',
     updatedAt: '',
-    edgeLabels: [],
     parentRelationshipId: null,
   };
 }
 
 export function HomePage() {
   const { selectedRootId, setSelectedRootId } = useSelectedRoot();
-  const { projects, loading: projectsLoading, createProject, renameProject, setProjectColor } = useProjects();
+  const { projects, loading: projectsLoading, createProject, cloneProject, renameProject, setProjectColor } = useProjects();
   const {
     thoughts, edgeRelationships, loading, createThought, updateThought, setThoughtColor,
     removeThought, createEdgeRelationship, removeEdgeRelationship,
@@ -50,6 +55,35 @@ export function HomePage() {
   const [focusedNodeId, setFocusedNodeId] = useState<string | undefined>(undefined);
   const [viewMode, setViewMode] = useState<NetworkViewMode>(loadViewMode);
   const [relDialogOpen, setRelDialogOpen] = useState(false);
+
+  // Mobile: single-screen layout driven by the route; the node preview sheet
+  // and relationships dialog live in history state so back closes them.
+  const isMobile = useIsMobile();
+  const location = useLocation();
+  const [sheetNodeId, openSheet, closeSheet] = useHistoryFlag<string>('node');
+  const [relOpen, openRel, closeRel] = useHistoryFlag('rel');
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+
+  // Mobile Thoughts screen drill-down. Stored as a history stack so the OS/browser
+  // back gesture pops one level (drill up); the focused node is the tail. Kept
+  // separate from the graph screen's node sheet — the two never interact.
+  const [drillPath, pushDrill, popDrill] = useHistoryFlag<string[]>('drill');
+  const drillId = drillPath?.[drillPath.length - 1];
+
+  const drillInto = useCallback((id: string) => {
+    if (!id || id === selectedRootId) return;
+    const path = drillPath ?? [];
+    if (path[path.length - 1] === id) return;
+    pushDrill([...path, id], { push: true });
+  }, [drillPath, selectedRootId, pushDrill]);
+
+  const drillUp = useCallback(() => {
+    if (drillPath?.length) popDrill(1);
+  }, [drillPath, popDrill]);
+
+  const drillToRoot = useCallback(() => {
+    if (drillPath?.length) popDrill(drillPath.length);
+  }, [drillPath, popDrill]);
 
   const handleViewModeChange = useCallback((mode: NetworkViewMode) => {
     setViewMode(mode);
@@ -65,6 +99,8 @@ export function HomePage() {
 
   const selectedProject = projects.find((p) => p.id === selectedRootId);
   const rootNode = selectedProject ? projectToRootNode(selectedProject) : undefined;
+  // Subscribed public graphs are read-only: the viewer can browse but not mutate.
+  const readOnly = selectedProject?.role === 'subscriber';
 
   const handleCreateProject = useCallback(async () => {
     const trimmed = projectName.trim();
@@ -74,6 +110,13 @@ export function HomePage() {
     setCreating(false);
     setSelectedRootId(project.id);
   }, [projectName, createProject, setSelectedRootId]);
+
+  const handleCloneProject = useCallback(async () => {
+    if (!selectedRootId) return;
+    const project = await cloneProject(selectedRootId);
+    setSelectedRootId(project.id);
+    setFocusedNodeId(undefined);
+  }, [selectedRootId, cloneProject, setSelectedRootId]);
 
   // Background click resets to project root view (not deselecting the project)
   const handleResetView = useCallback(() => {
@@ -88,6 +131,15 @@ export function HomePage() {
     }
     setFocusedNodeId(id);
   }, [selectedRootId]);
+
+  // Up one level: parent of the focused node; a null parent means the parent IS
+  // the project root, so clear the focus. Graph filtering follows for free —
+  // both the list and NetworkView re-derive from focusedNodeId.
+  const handleNavigateUp = useCallback(() => {
+    if (!focusedNodeId) return;
+    const focused = thoughts.find((t) => t.id === focusedNodeId);
+    setFocusedNodeId(focused?.parentId ?? undefined);
+  }, [focusedNodeId, thoughts]);
 
   // The active node: focused child, or the project root
   const activeNodeId = focusedNodeId || selectedRootId;
@@ -194,9 +246,129 @@ export function HomePage() {
     );
   }
 
+  if (isMobile) {
+    const isGraphScreen = location.pathname === '/graph';
+    const sheetThought = sheetNodeId ? thoughts.find((t) => t.id === sheetNodeId) : undefined;
+    const sheetState: SheetState = sheetThought ? (sheetExpanded ? 'expanded' : 'peek') : 'closed';
+
+    const handleSheetState = (s: SheetState) => {
+      if (s === 'closed') closeSheet();
+      setSheetExpanded(s === 'expanded');
+    };
+
+    // Thoughts screen focus: the drilled-into node (tail of the path) or the root.
+    const drillNode = drillId ? thoughts.find((t) => t.id === drillId) ?? rootNode : rootNode;
+    const drillTargetId = (drillNode && !drillNode.isRoot ? drillNode.id : selectedRootId) ?? undefined;
+    const drillVisible = drillNode && !drillNode.isRoot
+      ? thoughts.filter((t) => t.parentId === drillNode.id)
+      : thoughts;
+    const drilled = !!drillPath?.length && !!drillNode && !drillNode.isRoot;
+
+    return (
+      <div className="home-page home-page--mobile">
+        {isGraphScreen ? (
+          <div className="mobile-screen mobile-screen--graph" key="graph">
+            <div className="mobile-graph-area">
+              <NetworkView
+                thoughts={networkThoughts}
+                nodeColors={nodeColors}
+                onSelectNode={(id) => {
+                  if (id === selectedRootId) return; // project root has no preview
+                  setSheetExpanded(false);
+                  openSheet(id);
+                }}
+                onResetView={() => handleSheetState('closed')}
+                mode={viewMode}
+                edgeRels={edgeRelationships}
+                focusedNodeId={sheetNodeId}
+              />
+              <div className="mobile-mode-toggle" role="group" aria-label="Graph mode">
+                <div className="network-view-toggle">
+                  <button
+                    className={`network-toggle-btn ${viewMode === 'mindmap' ? 'network-toggle-btn--active' : ''}`}
+                    onClick={() => handleViewModeChange('mindmap')}
+                  >
+                    Mind map
+                  </button>
+                  <button
+                    className={`network-toggle-btn ${viewMode === 'graph' ? 'network-toggle-btn--active' : ''}`}
+                    onClick={() => handleViewModeChange('graph')}
+                  >
+                    Graph
+                  </button>
+                </div>
+              </div>
+              <CoachMark />
+            </div>
+            <ThoughtSheet
+              thought={sheetThought}
+              state={sheetState}
+              onStateChange={handleSheetState}
+              onUpdate={(id, data) => updateThought(id, data)}
+              onDelete={(id) => {
+                removeThought(id);
+                handleSheetState('closed');
+              }}
+              readOnly={readOnly}
+              fab={
+                readOnly ? undefined : (
+                  <Fab
+                    ariaLabel="Add relationship"
+                    onClick={() => openRel()}
+                    icon={
+                      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    }
+                  />
+                )
+              }
+            />
+          </div>
+        ) : (
+          <div className="mobile-screen" key="thoughts">
+            <ThoughtsList
+              thoughts={drillVisible}
+              activeNode={drillNode}
+              nodeBorderColor={(drillTargetId && nodeColors[drillTargetId]) || DEFAULT_NODE_COLOR}
+              onNodeBorderColorChange={(color) => {
+                if (!drillTargetId) return;
+                if (drillTargetId === selectedRootId) setProjectColor(drillTargetId, color);
+                else setThoughtColor(drillTargetId, color);
+              }}
+              onCreateThought={(title, body) =>
+                createThought(body, { title, parentId: drillTargetId })
+              }
+              onUpdateThought={handleUpdateThought}
+              onDeleteThought={removeThought}
+              onNavigateToNode={drillInto}
+              onNavigateUp={drilled ? drillUp : undefined}
+              onNavigateToRoot={drilled ? drillToRoot : undefined}
+              createFab
+              readOnly={readOnly}
+            />
+          </div>
+        )}
+        <RelationshipsDialog
+          open={!!relOpen}
+          onClose={closeRel}
+          projectId={selectedRootId}
+          thoughts={thoughts}
+          edgeRels={edgeRelationships}
+          onAdd={createEdgeRelationship}
+          onRemove={removeEdgeRelationship}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="home-page">
       <div className="home-page-thoughts">
+        {readOnly && (
+          <div className="home-page-readonly-chip">View only</div>
+        )}
         <ThoughtsList
           thoughts={visibleThoughts}
           activeNode={activeNode}
@@ -206,6 +378,10 @@ export function HomePage() {
           onUpdateThought={handleUpdateThought}
           onDeleteThought={removeThought}
           onNavigateToNode={handleSelectNode}
+          onNavigateUp={focusedNodeId ? handleNavigateUp : undefined}
+          onNavigateToRoot={focusedNodeId ? handleResetView : undefined}
+          onClone={handleCloneProject}
+          readOnly={readOnly}
         />
       </div>
       <div className="home-page-network">
@@ -218,7 +394,7 @@ export function HomePage() {
           edgeRels={edgeRelationships}
           focusedNodeId={focusedNodeId}
         />
-        <div className="network-controls">
+        <div className="network-toggle-wrap">
           <div className="network-view-toggle">
             <button
               className={`network-toggle-btn ${viewMode === 'mindmap' ? 'network-toggle-btn--active' : ''}`}
@@ -233,12 +409,16 @@ export function HomePage() {
               Graph
             </button>
           </div>
-          <button className="network-rel-btn" onClick={() => setRelDialogOpen(true)}>
-            Relationships
-          </button>
         </div>
+        {!readOnly && (
+          <div className="network-controls">
+            <button className="network-rel-btn" onClick={() => setRelDialogOpen(true)}>
+              Relationships
+            </button>
+          </div>
+        )}
       </div>
-      {selectedRootId && (
+      {selectedRootId && !readOnly && (
         <RelationshipsDialog
           open={relDialogOpen}
           onClose={() => setRelDialogOpen(false)}

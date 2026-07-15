@@ -1,5 +1,6 @@
 import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
+import { forceCollide } from 'd3-force-3d';
 import SpriteText from 'three-spritetext';
 import { Group, Sprite, SpriteMaterial, CanvasTexture } from 'three';
 import type { Thought, EdgeRelationship } from '../hooks/useThoughts';
@@ -7,17 +8,52 @@ import './NetworkView.css';
 
 export type NetworkViewMode = 'mindmap' | 'graph';
 
+const LABEL_HEIGHT = 2.5;
+const ROOT_LABEL_HEIGHT = 4.5;
+const LABEL_MAX_CHARS = 20;
+const LABEL_MAX_LINES = 2;
+
+/** Long titles blow up label footprints; full text lives in the card/sheet.
+ *  Word-wrap to at most two lines of LABEL_MAX_CHARS, truncating the overflow. */
+function truncateLabel(title: string): string {
+  const words = title.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    let w = word;
+    // Hard-break any single word wider than a line.
+    while (w.length > LABEL_MAX_CHARS) {
+      if (current) { lines.push(current); current = ''; }
+      lines.push(w.slice(0, LABEL_MAX_CHARS));
+      w = w.slice(LABEL_MAX_CHARS);
+    }
+    if (!current) current = w;
+    else if (current.length + 1 + w.length <= LABEL_MAX_CHARS) current += ' ' + w;
+    else { lines.push(current); current = w; }
+  }
+  if (current) lines.push(current);
+
+  if (lines.length <= LABEL_MAX_LINES) return lines.join('\n');
+
+  const kept = lines.slice(0, LABEL_MAX_LINES);
+  const last = kept[LABEL_MAX_LINES - 1];
+  kept[LABEL_MAX_LINES - 1] =
+    (last.length >= LABEL_MAX_CHARS ? last.slice(0, LABEL_MAX_CHARS - 1) : last).trimEnd() + '…';
+  return kept.join('\n');
+}
+
 interface Props {
   thoughts: Thought[];
   nodeColors?: Record<string, string>;
   onSelectNode?: (id: string) => void;
   onResetView?: () => void;
-  /** 'mindmap' (default): hierarchy + label co-occurrence edges.
-   *  'graph': relationship edges only — explicit directional edges + co-occurrence. */
+  /** 'mindmap' (default): hierarchy edges, with explicit relationships overlaid faded.
+   *  'graph': explicit directional relationship edges only. */
   mode?: NetworkViewMode;
   /** Explicit kind='edge' relationships, rendered as directed links in graph mode. */
   edgeRels?: EdgeRelationship[];
-  /** In graph mode, filter to this node plus its one-hop neighbours. */
+  /** Filter to this node plus its one-hop neighbours (parent, children,
+   *  relationship neighbours) in either mode. */
   focusedNodeId?: string;
 }
 
@@ -36,7 +72,6 @@ interface GraphLink {
   isDirected?: boolean;
   labelName?: string;
   labelColor?: string;
-  weight?: number;
 }
 
 export function NetworkView({
@@ -82,7 +117,7 @@ export function NetworkView({
     for (const thought of thoughts) {
       nodes.push({
         id: thought.id,
-        name: thought.title || '',
+        name: truncateLabel(thought.title || ''),
         body: thought.body || '',
         isRoot: thought.isRoot,
         hasTitle: !!thought.title,
@@ -128,69 +163,23 @@ export function NetworkView({
           labelName: rel.label?.name,
           labelColor: rel.label?.color,
         });
-        const a = rel.sourceId < rel.targetId ? rel.sourceId : rel.targetId;
-        const b = rel.sourceId < rel.targetId ? rel.targetId : rel.sourceId;
-        existingEdges.add(`${a}:${b}`);
       }
     }
 
-    // Label-based edges: connect thoughts that share is_edge labels directly
-    const byLabel = new Map<string, string[]>();
-    const labelNames = new Map<string, string>();
-    const labelColors = new Map<string, string>();
-    for (const thought of thoughts) {
-      if (!thought.edgeLabels) continue;
-      for (const label of thought.edgeLabels) {
-        let arr = byLabel.get(label.id);
-        if (!arr) {
-          arr = [];
-          byLabel.set(label.id, arr);
-        }
-        arr.push(thought.id);
-        labelNames.set(label.id, label.name);
-        labelColors.set(label.id, label.color);
+    // Selected node: filter to it + one-hop neighbours (either mode)
+    if (focusedNodeId && idSet.has(focusedNodeId)) {
+      const visible = new Set<string>([focusedNodeId]);
+      for (const link of links) {
+        if (link.source === focusedNodeId) visible.add(link.target);
+        if (link.target === focusedNodeId) visible.add(link.source);
       }
-    }
-
-    const edgeWeights = new Map<string, { weight: number; labelIds: string[] }>();
-    for (const [labelId, thoughtIds] of byLabel) {
-      for (let i = 0; i < thoughtIds.length; i++) {
-        for (let j = i + 1; j < thoughtIds.length; j++) {
-          const key = thoughtIds[i] < thoughtIds[j]
-            ? `${thoughtIds[i]}:${thoughtIds[j]}`
-            : `${thoughtIds[j]}:${thoughtIds[i]}`;
-          const existing = edgeWeights.get(key);
-          if (existing) {
-            existing.weight++;
-            existing.labelIds.push(labelId);
-          } else {
-            edgeWeights.set(key, { weight: 1, labelIds: [labelId] });
-          }
-        }
-      }
-    }
-
-    for (const [key, { weight, labelIds }] of edgeWeights) {
-      if (existingEdges.has(key)) continue;
-      const [src, tgt] = key.split(':');
-      const name = labelIds.map((id) => labelNames.get(id)).filter(Boolean).join(', ');
-      const color = labelColors.get(labelIds[0]) || '#999';
-      links.push({ source: src, target: tgt, isLabelEdge: true, labelName: name, labelColor: color, weight });
+      return {
+        nodes: nodes.filter((n) => visible.has(n.id)),
+        links: links.filter((l) => visible.has(l.source) && visible.has(l.target)),
+      };
     }
 
     if (mode === 'graph') {
-      // Selected node: filter to it + one-hop neighbours
-      if (focusedNodeId && idSet.has(focusedNodeId)) {
-        const visible = new Set<string>([focusedNodeId]);
-        for (const link of links) {
-          if (link.source === focusedNodeId) visible.add(link.target);
-          if (link.target === focusedNodeId) visible.add(link.source);
-        }
-        return {
-          nodes: nodes.filter((n) => visible.has(n.id)),
-          links: links.filter((l) => visible.has(l.source) && visible.has(l.target)),
-        };
-      }
       // No selection: hide orphan nodes (no relationship edges at all)
       const linked = new Set<string>();
       for (const link of links) {
@@ -203,20 +192,64 @@ export function NetworkView({
     return { nodes, links };
   }, [thoughts, mode, edgeRels, focusedNodeId]);
 
-  // Zoom to fit after graph data changes
+  // Zoom to fit after the data or the container changes: an early fit (the
+  // simulation is still moving, but it kills the worst of the mismatch), then
+  // a one-shot final fit once the force engine settles. Dimension changes
+  // debounce via the effect cleanup (the mobile sheet resizes continuously).
+  // Negative padding overshoots the fit: zoomToFit frames the 3D bounding
+  // sphere, which over-bounds a flat-ish graph and leaves dead margin —
+  // camera-only, node layout untouched.
+  const fitGraph = useCallback(() => {
+    const overshoot = -0.11 * Math.min(dimensions.width, dimensions.height);
+    fgRef.current?.zoomToFit(400, overshoot);
+  }, [dimensions]);
+
+  // Local label de-overlap: each node's collision radius approximates its
+  // label footprint, so only nodes whose labels would touch get pushed apart.
+  // The layout is flattened to a plane (numDimensions=2), so world-space
+  // separation maps 1:1 to the screen — radii can stay tight and the layout
+  // compact, unlike in 3D where depth-axis separation bought nothing.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!fgRef.current) return;
-      fgRef.current.zoomToFit(400, 40);
-    }, 500);
-    return () => clearTimeout(timer);
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3Force('collide', forceCollide((node) => {
+      const { isRoot, hasTitle, name } = node as GraphNode;
+      const circle = isRoot ? 8 : 5.5;
+      if (!hasTitle) return circle;
+      const textHeight = isRoot ? ROOT_LABEL_HEIGHT : LABEL_HEIGHT;
+      const widest = Math.max(...name.split('\n').map((l) => l.length));
+      return Math.max(circle, widest * textHeight * 0.22);
+    }));
   }, [graphData]);
+
+  const needsFinalFit = useRef(false);
+  useEffect(() => {
+    needsFinalFit.current = true;
+    const timer = setTimeout(fitGraph, 500);
+    return () => clearTimeout(timer);
+  }, [graphData, fitGraph]);
+
+  const handleEngineStop = useCallback(() => {
+    if (!needsFinalFit.current) return; // don't re-zoom after user node drags
+    needsFinalFit.current = false;
+    fitGraph();
+  }, [fitGraph]);
 
   // Force node object re-creation when colors change
   useEffect(() => {
     if (!fgRef.current) return;
     fgRef.current.refresh();
   }, [nodeColors]);
+
+  // Disable camera rotation on drag — pan/zoom only, layout is a flat plane.
+  // Covers both control flavours: TrackballControls (noRotate) and
+  // OrbitControls (enableRotate).
+  useEffect(() => {
+    const controls = fgRef.current?.controls();
+    if (!controls) return;
+    controls.noRotate = true;
+    controls.enableRotate = false;
+  }, [graphData]);
 
   const nodeThreeObject = useCallback((node: GraphNode) => {
     const borderColor = nodeColors[node.id] || '#e8a838';
@@ -259,7 +292,7 @@ export function NetworkView({
       const label = new SpriteText(node.name);
       label.color = '#111111';
       label.fontFace = 'Syne, sans-serif';
-      label.textHeight = node.isRoot ? 4 : 3;
+      label.textHeight = node.isRoot ? ROOT_LABEL_HEIGHT : LABEL_HEIGHT;
       label.material.depthTest = false;
       label.renderOrder = 2;
       group.add(label);
@@ -325,11 +358,13 @@ export function NetworkView({
         ref={fgRef}
         width={dimensions.width}
         height={dimensions.height}
+        numDimensions={2}
         graphData={graphData}
         nodeVal={nodeVal}
         nodeThreeObject={nodeThreeObject}
         onNodeClick={(node: GraphNode) => onSelectNode?.(node.id)}
         onBackgroundClick={() => onResetView?.()}
+        onEngineStop={handleEngineStop}
         nodeLabel={() => ''}
         linkLabel={(link: GraphLink) => {
           if (!link.labelName) return '';

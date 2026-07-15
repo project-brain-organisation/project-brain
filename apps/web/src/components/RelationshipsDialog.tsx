@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLabels } from '../hooks/useLabels';
 import type { Thought, EdgeRelationship } from '../hooks/useThoughts';
+import { thoughtName } from '../lib/thoughtName';
 // Shared overlay/dialog chrome (.mcp-overlay, .mcp-dialog, header classes)
 import './McpDialog.css';
 import './RelationshipsDialog.css';
@@ -15,13 +16,6 @@ interface Props {
   // Optimistic mutations owned by useThoughts (failures roll back + toast there).
   onAdd: (sourceId: string, targetId: string, label: { id: string; name: string; color: string }) => void;
   onRemove: (relationshipId: string) => void;
-}
-
-function thoughtName(thought: Thought | undefined): string {
-  if (!thought) return 'Unknown';
-  if (thought.title) return thought.title;
-  const snippet = thought.body.trim().slice(0, 40);
-  return snippet || 'Untitled';
 }
 
 export function RelationshipsDialog({ open, onClose, projectId, thoughts, edgeRels, onAdd, onRemove }: Props) {

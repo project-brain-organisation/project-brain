@@ -1,0 +1,342 @@
+{
+  "roadmap": {
+    "project_id": "backend-redesign-v2",
+    "created_at": "2026-06-04T15:05:20Z",
+    "goal": "Adopt the Entity Supertype (Table-per-Type) data model for graph nodes; scope every node to a project; introduce a unified relationships edge table; consolidate validation on drizzle-zod; and group volatile graph features under a single WorkspaceModule umbrella to eliminate circular-dependency churn.",
+    "total_steps": 16
+  },
+  "phases": [
+    {
+      "id": "01",
+      "name": "Schema",
+      "description": "Define all Drizzle table files in the new database/schema/ directory, replacing today's single schema.ts. Covers the Entity Supertype base table, all subtypes, the unified edge table, shared auth tables, and the barrel + migration regeneration.",
+      "steps": [
+        {
+          "id": "01-01",
+          "name": "entities + project_meta schema files",
+          "description": "Create entities.schema.ts (supertype registry with self-referential project_id FK) and project-meta.schema.ts (project subtype with owner_id FK to users). These two files are the foundation every other schema file imports.",
+          "criteria": [
+            "entities table compiles with a working self-referential project_id FK using onDelete cascade",
+            "project_meta.id is simultaneously the PK and a FK to entities.id (Table-per-Type pattern)",
+            "entityType pgEnum with values project/thought/label is exported for downstream reuse",
+            "index on entities.project_id and index on project_meta.owner_id are declared",
+            "npm run build succeeds from apps/api (temporary direct imports acceptable until barrel lands in step 01-05)"
+          ],
+          "implementation_notes": "NEW files — no prior equivalent. Use Drizzle's self-reference pattern: references((): any => entities.id, { onDelete: 'cascade' }). A minimal users stub (id only) in users.schema.ts is acceptable here; task 04 fleshes it out. Do NOT create the barrel index.ts yet — that belongs to step 01-05. Export entityType pgEnum so validators and services can import it without re-declaring.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).\n\nFor the schema compilation check, a single-example integration test that drizzle() boots with these tables is appropriate; property tests apply at the service layer in later steps.",
+          "test_file": "apps/api/test/schema/entities.spec.ts",
+          "scenario_name": "entities self-referential project_id and project_meta TPT key",
+          "estimated_minutes": 30,
+          "dependencies": []
+        },
+        {
+          "id": "01-02",
+          "name": "thoughts + labels subtype schema files",
+          "description": "Create thought.schema.ts and label.schema.ts. Both tables use their id as a FK to entities.id (Table-per-Type). Thoughts drop user_id, project_id, parent_id, is_root. Color is inline varchar(7) on both tables — never a FK.",
+          "criteria": [
+            "thoughts table compiles with no user_id, project_id, parent_id, or is_root columns",
+            "labels table compiles with no user_id or project_id columns",
+            "thoughts.color and labels.color are both inline varchar(7) nullable/defaulted respectively",
+            "Both tables declare id as PK and FK to entities.id with onDelete cascade",
+            "relations() tying each subtype id back to entities (one-to-one) are declared"
+          ],
+          "implementation_notes": "REPLACE — reference current src/database/schema.ts for field parity on body/title/content_hash/canvas geometry, but drop the listed columns. The colors table is being dropped in step 01-04; never create a color FK here. No parent_id — feed hierarchy will live in relationships (step 01-03). index on content_hash is recommended for dedup parity with idx_thoughts_content_hash.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/schema/subtypes.spec.ts",
+          "scenario_name": "thoughts and labels subtype FK and stripped columns",
+          "estimated_minutes": 25,
+          "dependencies": ["01-01"]
+        },
+        {
+          "id": "01-03",
+          "name": "relationships unified edge table schema file",
+          "description": "Create relationship.schema.ts defining the single edge table discriminated by a kind enum (hierarchy/tag/edge). Includes all four indexes and the three partial unique constraints that enforce per-kind invariants at the DB layer.",
+          "criteria": [
+            "relationships table compiles with kind as NOT NULL enum and label_id as nullable FK to entities.id with onDelete set null",
+            "Partial unique index UNIQUE (source_id) WHERE kind='hierarchy' exists",
+            "Partial unique index UNIQUE (source_id, target_id) WHERE kind='tag' exists",
+            "Partial unique index UNIQUE (source_id, target_id, label_id) WHERE kind='edge' exists",
+            "relationshipKind pgEnum is exported; direction-convention comment is present in the file"
+          ],
+          "implementation_notes": "NEW file. Use Drizzle's uniqueIndex(...).where(sql`...`) for the three partial unique constraints — do not skip them; they are the DB-level enforcement of the per-kind invariants that the service layer (step 03-03) relies on. All four FKs (project_id, source_id, target_id, label_id) reference entities.id with their respective onDelete policies. Document the direction-convention table in a file-level comment: hierarchy = child→parent, tag = thought→label, edge = node→node. Endpoint-type validation (tag target must be a label) is service-layer only — not a DB constraint.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/schema/relationships.spec.ts",
+          "scenario_name": "relationships partial unique indexes per kind",
+          "estimated_minutes": 35,
+          "dependencies": ["01-01", "01-02"]
+        },
+        {
+          "id": "01-04",
+          "name": "chunks + shared auth tables; drop colors",
+          "description": "Create chunk.schema.ts (adds project_id, drops user_id), port users.schema.ts and mcp-tokens.schema.ts verbatim from current schema.ts, and confirm no colors or thought_labels table is created anywhere in database/schema/.",
+          "criteria": [
+            "chunks table has project_id FK to entities.id with cascade and no user_id column",
+            "chunks table carries the working vector(768) custom pgvector type copied from current schema.ts",
+            "users, credentials, mcp_auth_codes, mcp_refresh_tokens are present and unchanged in shape",
+            "No colors table and no thought_labels table exist in database/schema/",
+            "Files compile alongside steps 01-01 through 01-03"
+          ],
+          "implementation_notes": "REPLACE chunks (add project_id, drop user_id); KEEP users/credentials/mcp-tokens verbatim. Copy the customType vector(768) definition exactly from the current src/database/schema.ts — do not reinvent it. If step 01-01 left only a users stub, flesh it out to the full definition now. Drop colors: color is an inline varchar(7) on thoughts and labels (steps 01-01/01-02); normalizing behind a UUID FK costs a join for 7 bytes. Drop thought_labels: tagging is kind='tag' in relationships (step 01-03).\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/schema/chunks-and-shared.spec.ts",
+          "scenario_name": "chunks project_id scoping and vector type; no colors table",
+          "estimated_minutes": 30,
+          "dependencies": ["01-01", "01-02"]
+        },
+        {
+          "id": "01-05",
+          "name": "Schema barrel, drizzle.config repoint, and migration regeneration",
+          "description": "Assemble database/schema/index.ts re-exporting all tables and relations, update drizzle.config.ts to point at the directory, delete the old schema.ts and obsolete migration scripts, then generate and apply a single fresh migration against an empty database.",
+          "criteria": [
+            "npm run build succeeds from apps/api with no references to the deleted schema.ts",
+            "A single fresh migration generates and applies to an empty database without error",
+            "DatabaseService boots and exposes db typed with the full schema (all ten tables present)",
+            "No references remain to deleted files: schema.ts, run-migration-colors.js, run-migration-is-edge.js, run-migration-scoping.js, apply-migration-0005.mjs",
+            "drizzle-kit generate produces no unexpected diff against the applied schema"
+          ],
+          "implementation_notes": "REPLACE single schema.ts with schema/ directory barrel. The DatabaseService import line 'import * as schema from ./schema' should resolve to the barrel without modification — verify before assuming a change is needed. Delete old migration SQL + meta/ directory (no live data; destructive is acceptable). Delete the four obsolete scripts listed in acceptance criteria; keep test-oauth-flow.mjs. The generated migration must include CREATE EXTENSION IF NOT EXISTS vector; if drizzle-kit does not emit it, add it manually or document it as a pre-step. Run npx drizzle-kit generate then npx drizzle-kit migrate against a fresh/empty DB and confirm clean apply.\n\nEXEMPT FROM PARADIGM: structural scaffolding (barrel assembly, config repoint, migration file generation) with no domain logic. Compensate with a single-example integration test at this step that boots DatabaseService and queries each table name from information_schema to confirm the full schema landed.",
+          "test_file": "apps/api/test/schema/barrel-and-migration.spec.ts",
+          "scenario_name": "full schema applies to empty database and DatabaseService boots",
+          "estimated_minutes": 40,
+          "dependencies": ["01-01", "01-02", "01-03", "01-04"]
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "name": "Core Modules",
+      "description": "Stand up UsersModule (profile CRUD split from AuthModule), ProjectsModule (project lifecycle + the create-project transaction + the exported ownership gate), and WorkspaceModule scaffold (empty umbrella with six sub-folders).",
+      "steps": [
+        {
+          "id": "02-01",
+          "name": "UsersModule (profile CRUD split from AuthModule)",
+          "description": "Create apps/api/src/users/ with UsersService as the single place that creates/reads/updates users rows. AuthModule imports UsersModule and delegates profile lookups to it. Credential/session/token logic stays in AuthModule.",
+          "criteria": [
+            "npm run build succeeds with UsersModule registered and AuthModule importing it",
+            "Auth flows still resolve a user with no behavioral regression in login or JWT issuance",
+            "UsersService is the single place that creates, reads, and updates users rows",
+            "credentials, mcp_auth_codes, and mcp_refresh_tokens handling remains in AuthModule and is not moved here"
+          ],
+          "implementation_notes": "NEW module. Audit apps/api/src/auth/auth.service.ts to identify which methods touch the users table directly and move those to UsersService. Leave token/credential/session logic in place. A users.controller.ts is optional — only add profile endpoints if the web app needs them; document the choice. UsersService must be exported from UsersModule so AuthModule and ProjectsModule (step 02-02) can inject it.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/users/users.service.spec.ts",
+          "scenario_name": "UsersService single-source profile operations; auth regression",
+          "estimated_minutes": 45,
+          "dependencies": ["01-05"]
+        },
+        {
+          "id": "02-02",
+          "name": "ProjectsModule (create-project transaction + ownership gate)",
+          "description": "Create apps/api/src/projects/ implementing the project lifecycle: create (atomic two-row transaction: entities root + project_meta), list, update, delete. Export assertOwnership() — the single tenant-boundary check reused by all downstream workspace services.",
+          "criteria": [
+            "Creating a project yields exactly one entities row (type=project, project_id=self) and one project_meta row; failure of either rolls back both",
+            "assertOwnership is exported and throws ForbiddenException when owner_id does not match the requesting user",
+            "Deleting a project cascades to all its child entities, relationships, and chunks via the self-referential FK",
+            "npm run build succeeds with JwtAuthGuard protecting all controller endpoints"
+          ],
+          "implementation_notes": "NEW module. Use db.transaction(...) for the create-project two-step: generate uuid X up front, INSERT entities (id=X, project_id=X, type='project') then INSERT project_meta (id=X, owner_id=caller, ...). The self-referential cascade on entities means delete-project is simply deleting the entities row — no manual cleanup needed. assertOwnership is the tenant boundary defined in §2.3: SELECT owner_id FROM project_meta WHERE id = projectId; throw if missing or mismatch. Export it so workspace services can import it without circular deps.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/projects/projects.service.spec.ts",
+          "scenario_name": "create-project atomic transaction and ownership gate rejection",
+          "estimated_minutes": 60,
+          "dependencies": ["01-05", "02-01"]
+        },
+        {
+          "id": "02-03",
+          "name": "WorkspaceModule scaffold (empty umbrella + sub-folders)",
+          "description": "Create apps/api/src/workspace/workspace.module.ts and the six empty sub-folders (thoughts/, labels/, relationships/, pipeline/, gateway/, validation/) so subsequent tasks have a known home. Register WorkspaceModule in app.module.ts.",
+          "criteria": [
+            "npm run build succeeds with WorkspaceModule registered in app.module.ts",
+            "All six sub-folders exist: thoughts, labels, relationships, pipeline, gateway, validation",
+            "workspace.module.ts imports DatabaseModule and ProjectsModule with TODO markers for forthcoming providers",
+            "No domain logic is added — this step is structural scaffolding only"
+          ],
+          "implementation_notes": "NEW module shell. Rationale for the umbrella: thoughts/labels/relationships/chunks reference each other constantly; bundling them avoids cross-module circular-import friction while staying decoupled at the real seams (auth, projects, users, database). Old modules (ThoughtsModule, LabelsModule, ChunkingModule, EmbeddingModule, ColorsModule, McpEventsModule) will be removed in their respective tasks — leave them in app.module.ts imports for now if removing them breaks the build; note the intended end state in a comment.\n\nEXEMPT FROM PARADIGM: structural scaffolding with no domain logic. Compensate with property-based tests at the first step that adds behaviour (step 03-01).",
+          "test_file": "apps/api/test/workspace/workspace-scaffold.spec.ts",
+          "scenario_name": "WorkspaceModule registers and six sub-folders exist",
+          "estimated_minutes": 20,
+          "dependencies": ["01-05"]
+        }
+      ]
+    },
+    {
+      "id": "03",
+      "name": "Workspace Domain",
+      "description": "Implement the four workspace sub-services: thoughts CRUD (entity+subtype transaction), labels CRUD, relationships service (all three kinds with per-kind validation and recursive hierarchy CTE), and pipeline relocation (chunking + embedding adapted to project_id scoping).",
+      "steps": [
+        {
+          "id": "03-01",
+          "name": "Workspace thoughts service + controller",
+          "description": "Reimplement thought CRUD under workspace/thoughts/. A thought is an entities row (type=thought) + a thoughts row, created together in a transaction and ownership-gated via assertOwnership. Absorbs the dropped ColorsModule (color is inline on the thoughts row).",
+          "criteria": [
+            "Creating a thought writes paired entities and thoughts rows in one transaction; failure rolls back both",
+            "All reads filter by entities.project_id and are gated by assertOwnership before any DB access",
+            "Color set and clear update thoughts.color inline with no reference to the dropped colors table",
+            "Delete removes the entities row and cascades to the thoughts row, its chunks, and any relationships referencing it"
+          ],
+          "implementation_notes": "REPLACE existing thoughts module (port from apps/api/src/thoughts/ but adapt). Do NOT reintroduce parent_id — feed hierarchy is a kind='hierarchy' relationship (step 03-03). Leave input validation as light DTOs for now; step 04-01 swaps in drizzle-zod. Leave clearly marked TODO hooks where mutations would publish a real-time event (step 04-02 slots in there). Color set/clear: UPDATE thoughts SET color = ? WHERE id = ? — no FK, no colors table lookup.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/workspace/thoughts/thoughts.service.spec.ts",
+          "scenario_name": "create thought atomic transaction and project-scoped ownership gate",
+          "estimated_minutes": 75,
+          "dependencies": ["02-02", "02-03"]
+        },
+        {
+          "id": "03-02",
+          "name": "Workspace labels service + controller",
+          "description": "Reimplement label CRUD under workspace/labels/. A label is an entities row (type=label) + a labels row in one transaction. Tagging (assign/unassign label to thought) is explicitly NOT here — it lives in the relationships service as kind='tag'.",
+          "criteria": [
+            "Label create writes paired entities and labels rows in one transaction; failure rolls back both",
+            "findByProject filters by entities.project_id and calls assertOwnership before any DB access",
+            "No assignLabel, unassignLabel, or thought_labels logic exists in the labels service or controller",
+            "Delete removes the entities row, cascading to the labels row and nullifying label_id on any relationships"
+          ],
+          "implementation_notes": "KEEP logic, REPLACE location (port from apps/api/src/labels/ but adapt to subtype schema). Key gotcha: any existing assignLabel/unassignLabel methods move to step 03-03 as kind='tag' operations — do not recreate them here. Leave validation light; leave TODO emit hooks for step 04-02.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/workspace/labels/labels.service.spec.ts",
+          "scenario_name": "create label atomic transaction and no tagging logic in labels service",
+          "estimated_minutes": 60,
+          "dependencies": ["02-03"]
+        },
+        {
+          "id": "03-03",
+          "name": "Workspace relationships service + controller",
+          "description": "Implement the service over the unified relationships table for all three kinds: hierarchy (feed tree with recursive CTE), tag (thought-label assignment), and edge (canvas connections). Enforces cross-project invariant, per-kind endpoint-type rules, and surfaces clean errors on partial-unique conflicts.",
+          "criteria": [
+            "Each kind enforces its endpoint-type rule: hierarchy requires thought/thought, tag requires thought/label, edge allows any nodes",
+            "Cross-project invariant rejects any relationship where source, target, or label_id entities have differing project_id values",
+            "Duplicate tag, duplicate edge, and second-parent writes are rejected with a clean error (not a raw DB exception)",
+            "A recursive-CTE children/descendants query exists and returns the correct feed tree for hierarchy rows"
+          ],
+          "implementation_notes": "NEW service. Common precondition for every write: assertOwnership then load source/target entities and assert their project_id all equal the request projectId. For hierarchy: DB partial unique (source_id) WHERE kind='hierarchy' enforces one-parent; catch the unique-constraint error and surface a 409 or descriptive message. For the recursive-CTE feed: WITH RECURSIVE over kind='hierarchy' rows — see §2.2 direction conventions (source=child, target=parent). Leave TODO emit hooks for step 04-02.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/workspace/relationships/relationships.service.spec.ts",
+          "scenario_name": "per-kind endpoint rules, cross-project invariant, and duplicate rejection",
+          "estimated_minutes": 90,
+          "dependencies": ["03-01", "03-02"]
+        },
+        {
+          "id": "03-04",
+          "name": "Workspace pipeline relocation (chunking + embedding)",
+          "description": "Move apps/api/src/chunking/ and apps/api/src/embedding/ into workspace/pipeline/ and adapt chunk persistence to use project_id instead of user_id. Semantic search (remember) and elaborate read paths are updated to scope by project_id and gate by ownership.",
+          "criteria": [
+            "Chunks are written with project_id matching the thought's entities.project_id and with no user_id column",
+            "Creating or editing a thought body still triggers re-chunking and re-embedding (async/background behaviour preserved)",
+            "Semantic search returns results scoped to the owning project and ownership-gated",
+            "npm run build succeeds with pipeline providers registered in WorkspaceModule"
+          ],
+          "implementation_notes": "KEEP logic, REPLACE location and persistence. Move chunking.service and embedding.service into workspace/pipeline/. Only change: everywhere a user_id was written to or filtered on chunks, substitute project_id (look it up from the thought's entities row or pass it through the call). Keep vector(768) type usage identical to step 01-04's schema definition. Remove old top-level ChunkingModule / EmbeddingModule if the build stays green after the move; otherwise defer to step 05-02 (final cleanup).\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/workspace/pipeline/pipeline.service.spec.ts",
+          "scenario_name": "chunks written with project_id and semantic search scoped by project",
+          "estimated_minutes": 60,
+          "dependencies": ["03-01"]
+        }
+      ]
+    },
+    {
+      "id": "04",
+      "name": "Quality and Real-time",
+      "description": "Replace class-validator DTOs with drizzle-zod schemas and a ZodValidationPipe (layer 1 intrinsic validation only), then generalize the existing MCP-only SSE bus into a workspace gateway that broadcasts every mutation regardless of source.",
+      "steps": [
+        {
+          "id": "04-01",
+          "name": "Validation: drizzle-zod schemas + ZodValidationPipe",
+          "description": "Create workspace/validation/ with request schemas built via createInsertSchema() + .pick/.omit/.extend/.refine for thoughts, labels, and relationships. Wire a ZodValidationPipe to all new controllers. Remove class-validator DTO files.",
+          "criteria": [
+            "Controllers validate via drizzle-zod schemas and invalid payloads receive a clean 400 response",
+            "color fields on create-thought and create-label are validated against /^#[0-9a-fA-F]{6}$/ when present",
+            "Relationship input schema rejects source_id === target_id via .refine() and constrains label_id to kind='edge' only",
+            "No class-validator DTO files remain under apps/api/src/thoughts/dto/ or apps/api/src/labels/dto/",
+            "Schemas are exported from workspace/validation/ for the internal-mcp layer to import in step 05-01"
+          ],
+          "implementation_notes": "REPLACE class-validator DTOs. Layer 1 only — no async/stateful refinements in Zod (no DB lookups for ownership, existence, or uniqueness; those belong in services). The create-thought request schema is composed from entities + thoughts inferred schemas (spans two tables per §3) — do not use a raw single-table insert schema. Add drizzle-zod to apps/api package.json. Drop class-validator/class-transformer usage where it was only serving these DTOs; keep global ValidationPipe config only if still needed for other parts of the codebase.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/workspace/validation/zod-schemas.spec.ts",
+          "scenario_name": "drizzle-zod schemas reject invalid payloads and export for MCP reuse",
+          "estimated_minutes": 60,
+          "dependencies": ["03-01", "03-02", "03-03"]
+        },
+        {
+          "id": "04-02",
+          "name": "Workspace gateway (real-time SSE); remove mcp-events",
+          "description": "Create workspace/gateway/workspace.gateway.ts generalizing the existing per-user RxJS Subject SSE bus. Move event publishers into thoughts/labels/relationships services so every mutation broadcasts a typed WorkspaceEvent with source: user|mcp. Remove McpEventsModule.",
+          "criteria": [
+            "A mutation through thoughts, labels, or relationships service publishes exactly one WorkspaceEvent with the correct source field",
+            "The per-user SSE endpoint streams only that user's events with heartbeat intact",
+            "mcp-events module, service, and controller are deleted with no remaining imports in app.module.ts",
+            "npm run build succeeds with no references to McpEventsService or McpEventsModule"
+          ],
+          "implementation_notes": "REPLACE mcp-events. Base the new gateway on apps/api/src/mcp-events/mcp-events.service.ts (per-user Subject, heartbeat, SSE Observable<SseMessage>) — the pattern works well. Extend the event payload with source: 'user' | 'mcp' and keep entity type + resource ids as WorkspaceEvent. Publishers fill in the TODO hooks left in steps 03-01/03-02/03-03. Do NOT introduce WebSockets — SSE + REST writes is the chosen design per §5. The internal-mcp controller's emit calls are removed here; when source='mcp' is needed, pass a source flag through the service call or set it based on call context. Keep event shape close to current McpToolEvent to minimize frontend churn.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/workspace/gateway/workspace.gateway.spec.ts",
+          "scenario_name": "workspace gateway publishes typed event per mutation and user isolation",
+          "estimated_minutes": 75,
+          "dependencies": ["03-01", "03-02", "03-03"]
+        }
+      ]
+    },
+    {
+      "id": "05",
+      "name": "Integration and Cleanup",
+      "description": "Rewire internal-mcp controllers to new services (projects/workspace) while keeping the sidecar HTTP contract unchanged, then perform final app.module.ts wiring, delete all dropped modules/directories, and verify the full build + migration + smoke-test pipeline.",
+      "steps": [
+        {
+          "id": "05-01",
+          "name": "Rewire internal-mcp controllers to new services",
+          "description": "Keep the /api/internal/mcp/* HTTP contract intact for the apps/mcp sidecar, but point every handler at ProjectsService, ThoughtsService, LabelsService, RelationshipsService, and the pipeline services. Remove emit calls (gateway now publishes). Apply drizzle-zod schemas to validate incoming payloads.",
+          "criteria": [
+            "Every /api/internal/mcp/* endpoint delegates to a new service with no references to ColorsService, thought_labels, root-thought project creation, or McpEventsService",
+            "add-label-to-thought and remove-label-from-thought delegate to RelationshipsService as kind=tag operations",
+            "set-thought-color and clear-thought-color delegate to ThoughtsService inline color update",
+            "MCP tool tests in apps/mcp/src/tools/*.test.ts pass end-to-end against the rewired endpoints",
+            "apps/mcp sidecar and its api-client.ts are untouched"
+          ],
+          "implementation_notes": "KEEP (rewired). McpInternalGuard and x-mcp-user-id header handling are preserved — do not touch them. list-projects / create-project → ProjectsService (projects are type='project' entities now, not root thoughts). list-thoughts filtering by project uses project_id. thought-to-prompt assembles parent/children via RelationshipsService hierarchy queries and tags via kind='tag'. Remove all emit(...) calls from the controller — the workspace services now publish events (step 04-02). Apply the shared drizzle-zod schemas exported in step 04-01 so MCP and UI obey identical validation rules.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/internal-mcp/internal-mcp.controller.spec.ts",
+          "scenario_name": "internal-mcp endpoints delegate to new services with no legacy references",
+          "estimated_minutes": 90,
+          "dependencies": ["03-01", "03-02", "03-03", "03-04", "04-02"]
+        },
+        {
+          "id": "05-02",
+          "name": "app.module wiring, dead module deletion, and full verify",
+          "description": "Update app.module.ts to the final six-module import set, delete all dropped/relocated directories, grep for every stale reference, and run all five verification steps: build, lint, schema diff, fresh-DB smoke test, and MCP tool tests.",
+          "criteria": [
+            "app.module.ts imports exactly DatabaseModule, AuthModule, UsersModule, ProjectsModule, WorkspaceModule, InternalMcpModule and no others",
+            "Deleted directories apps/api/src/thoughts, labels, chunking, embedding, colors, mcp-events leave no dangling imports",
+            "Grep for is_root, parent_id, thought_labels, colors, ColorsService, McpEventsService, and the old database/schema.ts path returns zero matches outside planning docs",
+            "Full smoke test passes: create user, create project, create thought with color, tag it, create an edge, semantic search, delete project verifies cascade leaves no orphan entities/relationships/chunks",
+            "MCP tool tests in apps/mcp pass against the running api"
+          ],
+          "implementation_notes": "KEEP (rewired final state). This is the integration verification step — no new logic. Verification sequence: (1) npm run build from apps/api; (2) npm run lint (no new errors); (3) npx drizzle-kit generate produces no unexpected diff; (4) migrate fresh DB and run the smoke-test flow; (5) run apps/mcp tool tests against the running api. The target directory tree from §7 of the architecture spec is the ground truth — verify folder-for-folder. If any prior step left a TODO that was deferred to this step, resolve it now.\n\nTEST PARADIGM (mandatory): Unit tests MUST be written as property-based tests using Hypothesis @given strategies + state-delta matchers (assert_state_delta over a declared universe with strict=True). Single-example unit tests are FALLBACK only — document why in a # bypass: comment if used. Acceptance scenarios MUST be framed as Property: blocks (quantified preconditions + invariant outcomes) where the contract supports it; classic Scenario: is fallback. Integration and E2E tests REMAIN single-example — they verify wiring, not invariants.\n\nSTAGE CONTEXT: NEW code = Stage 0 (paradigm-from-day-zero, no debt accumulates).",
+          "test_file": "apps/api/test/integration/full-smoke.spec.ts",
+          "scenario_name": "end-to-end flow: project create through cascade delete with no orphans",
+          "estimated_minutes": 60,
+          "dependencies": ["05-01"]
+        }
+      ]
+    }
+  ],
+  "implementation_scope": {
+    "source_directories": [
+      "apps/api/src/database/schema/",
+      "apps/api/src/users/",
+      "apps/api/src/projects/",
+      "apps/api/src/workspace/",
+      "apps/api/src/internal-mcp/",
+      "apps/api/src/app.module.ts"
+    ],
+    "test_directories": [
+      "apps/api/test/schema/",
+      "apps/api/test/users/",
+      "apps/api/test/projects/",
+      "apps/api/test/workspace/",
+      "apps/api/test/internal-mcp/",
+      "apps/api/test/integration/",
+      "apps/mcp/src/tools/"
+    ],
+    "excluded_patterns": [
+      "**/*.js",
+      "node_modules/**",
+      "dist/**",
+      "*.d.ts",
+      "apps/web/**",
+      "apps/mcp/src/**",
+      "planning-files/**"
+    ]
+  },
+  "validation": {
+    "status": "pending",
+    "reviewer": "nw-solution-architect",
+    "approved_at": "TODO"
+  }
+}

@@ -1,6 +1,9 @@
 .network-view {
   position: absolute;
   inset: 0;
+  /* The graph consumes raw pointer events (rotate/pan/pinch); never let the
+   * browser interpret them as page scroll or double-tap zoom. */
+  touch-action: none;
 }
 
 .network-view-empty {
