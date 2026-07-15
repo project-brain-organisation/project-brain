@@ -10,7 +10,6 @@ import { RelationshipsDialog } from './RelationshipsDialog';
 import { ThoughtsList } from './ThoughtsList';
 import { ThoughtSheet, type SheetState } from './ThoughtSheet';
 import { Fab } from './Fab';
-import { CoachMark } from './CoachMark';
 import './HomePage.css';
 
 const DEFAULT_NODE_COLOR = '#e8a838';
@@ -298,7 +297,6 @@ export function HomePage() {
                   </button>
                 </div>
               </div>
-              <CoachMark />
             </div>
             <ThoughtSheet
               thought={sheetThought}

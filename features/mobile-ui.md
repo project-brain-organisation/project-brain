@@ -85,9 +85,6 @@ the FAB changes with the destination).
   thoughts list scrolls internally.
 - OS edge-swipe-back can't be suppressed in a browser; routing above makes an
   accidental swipe a harmless tab change instead of an app exit.
-- **Coach mark** on first Graph visit: one-time dismissible overlay ("Drag to
-  rotate · Pinch to zoom · Tap a node to preview"), auto-dismissed on first
-  interaction, remembered in localStorage.
 
 Deferred: graph remount cost / camera reset on tab switches, and a 2D fallback
 for low-end phones — revisit if real users hit it.
@@ -122,12 +119,15 @@ for low-end phones — revisit if real users hit it.
 - [x] Toasts/snackbars render above the FAB and tab bar (never behind either)
 - [x] Gesture containment: `touch-action: none` on canvas,
       `overscroll-behavior: none` + fixed `100dvh` shell
-- [x] Coach mark overlay on first Graph visit (localStorage flag)
+- [x] ~~Coach mark overlay on first Graph visit (localStorage flag)~~ —
+      removed 2026-07-15: rotation is force-disabled in `NetworkView`, so the
+      hint's first instruction was impossible
 - [x] Keyboard handling: `interactive-widget=resizes-content` viewport meta,
       FAB scales out while a text field has focus
 - [x] Layout hygiene: `viewport-fit=cover` meta, ≥48px touch targets on new
       chrome; card actions always visible (no hover) on touch
-- [ ] Verify 3D graph touch interaction (rotate/pinch/tap) on a real phone
+- [ ] Verify 3D graph touch interaction (pinch/tap) on a real phone — rotation
+      is deliberately disabled in `NetworkView`
 - [ ] Verify drawer delete-project confirm flow on mobile
 - [x] Update `features/codebase-overview.md` (web section) once landed
 
@@ -149,4 +149,4 @@ for low-end phones — revisit if real users hit it.
   the global mobile media query) — native mobile uses transient overlay
   scrollbars; visible tracks only appear in desktop emulation.
 - New files: `useIsMobile.ts`, `useHistoryFlag.ts`, `TopBar`, `TabBar`,
-  `Fab`, `ThoughtSheet`, `CoachMark` (+ CSS each).
+  `Fab`, `ThoughtSheet` (+ CSS each).
