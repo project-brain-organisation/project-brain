@@ -205,7 +205,9 @@ React 19 SPA. Entry [main.tsx](../apps/web/src/main.tsx) → [App.tsx](../apps/w
   events are ignored (already patched optimistically). There are no ad-hoc event buses.
 - **Components:** [HomePage](../apps/web/src/components/HomePage.tsx) is the main view (presents the project
   as a synthesized root pseudo-node, drill-down by focus), [NetworkView](../apps/web/src/components/NetworkView.tsx)
-  (3D force graph), [ThoughtsList](../apps/web/src/components/ThoughtsList.tsx),
+  (mind map rendered with `react-force-graph-3d`, but laid out deterministically by
+  [radialTreeLayout](../apps/web/src/lib/radialTreeLayout.ts) with every node pinned — no force
+  simulation), [ThoughtsList](../apps/web/src/components/ThoughtsList.tsx),
   [ThoughtCard](../apps/web/src/components/ThoughtCard.tsx), [LabelPicker](../apps/web/src/components/LabelPicker.tsx),
   [Sidebar](../apps/web/src/components/Sidebar.tsx), [Shell](../apps/web/src/components/Shell.tsx),
   [McpDialog](../apps/web/src/components/McpDialog.tsx), [Login](../apps/web/src/components/Login.tsx).

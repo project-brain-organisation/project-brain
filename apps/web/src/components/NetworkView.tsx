@@ -1,9 +1,9 @@
 import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
-import { forceCollide } from 'd3-force-3d';
 import SpriteText from 'three-spritetext';
 import { Group, Sprite, SpriteMaterial, CanvasTexture } from 'three';
 import type { Thought, EdgeRelationship } from '../hooks/useThoughts';
+import { radialTreeLayout } from '../lib/radialTreeLayout';
 import './NetworkView.css';
 
 const LABEL_HEIGHT = 2.5;
@@ -59,6 +59,20 @@ interface GraphNode {
   body: string;
   isRoot: boolean;
   hasTitle: boolean;
+  x?: number;
+  y?: number;
+  fx?: number;
+  fy?: number;
+  fz?: number;
+}
+
+/** Half-width of a node's rendered footprint (circle or label), world units. */
+function nodeRadius(node: GraphNode): number {
+  const circle = node.isRoot ? 8 : 5.5;
+  if (!node.hasTitle) return circle;
+  const textHeight = node.isRoot ? ROOT_LABEL_HEIGHT : LABEL_HEIGHT;
+  const widest = Math.max(...node.name.split('\n').map((l) => l.length));
+  return Math.max(circle, widest * textHeight * 0.22);
 }
 
 interface GraphLink {
@@ -103,9 +117,9 @@ export function NetworkView({
     roRef.current = ro;
   }, []);
 
-  const graphData = useMemo(() => {
-    const nodes: GraphNode[] = [];
-    const links: GraphLink[] = [];
+  const { graphData, bbox } = useMemo(() => {
+    let nodes: GraphNode[] = [];
+    let links: GraphLink[] = [];
     const idSet = new Set(thoughts.map((t) => t.id));
 
     for (const thought of thoughts) {
@@ -153,56 +167,63 @@ export function NetworkView({
         if (link.source === focusedNodeId) visible.add(link.target);
         if (link.target === focusedNodeId) visible.add(link.source);
       }
-      return {
-        nodes: nodes.filter((n) => visible.has(n.id)),
-        links: links.filter((l) => visible.has(l.source) && visible.has(l.target)),
-      };
+      nodes = nodes.filter((n) => visible.has(n.id));
+      links = links.filter((l) => visible.has(l.source) && visible.has(l.target));
     }
 
-    return { nodes, links };
+    // Deterministic radial tidy tree, rooted at the focused node when there is
+    // one. Pinning fx/fy/fz sidelines the force engine entirely: the graph
+    // renders settled on the first frame. Hierarchy links precede overlay
+    // edges in `links`, so the spanning tree follows the real hierarchy.
+    const rootId =
+      focusedNodeId && idSet.has(focusedNodeId)
+        ? focusedNodeId
+        : (nodes.find((n) => n.isRoot) ?? nodes[0])?.id ?? '';
+    const positions = radialTreeLayout(
+      nodes.map((n) => ({ id: n.id, radius: nodeRadius(n) })),
+      links,
+      rootId,
+    );
+    let minX = 0, minY = 0, maxX = 0, maxY = 0;
+    for (const node of nodes) {
+      const pos = positions.get(node.id);
+      if (!pos) continue;
+      node.x = node.fx = pos.x;
+      node.y = node.fy = pos.y;
+      node.fz = 0;
+      const r = nodeRadius(node);
+      minX = Math.min(minX, pos.x - r);
+      maxX = Math.max(maxX, pos.x + r);
+      minY = Math.min(minY, pos.y - r);
+      maxY = Math.max(maxY, pos.y + r);
+    }
+    return { graphData: { nodes, links }, bbox: { minX, minY, maxX, maxY } };
   }, [thoughts, edgeRels, focusedNodeId]);
 
-  // Zoom to fit after the data or the container changes: an early fit (the
-  // simulation is still moving, but it kills the worst of the mismatch), then
-  // a one-shot final fit once the force engine settles. Dimension changes
-  // debounce via the effect cleanup (the mobile sheet resizes continuously).
-  // Negative padding overshoots the fit: zoomToFit frames the 3D bounding
-  // sphere, which over-bounds a flat-ish graph and leaves dead margin —
-  // camera-only, node layout untouched.
+  // Frame the graph exactly: the layout is known ahead of render, so position
+  // the camera to fit its bounding box (perspective height/width fit) instead
+  // of zoomToFit's bounding-sphere guesswork. Instant on first render,
+  // animated on later data/size changes.
+  const firstFit = useRef(true);
   const fitGraph = useCallback(() => {
-    const overshoot = -0.11 * Math.min(dimensions.width, dimensions.height);
-    fgRef.current?.zoomToFit(400, overshoot);
-  }, [dimensions]);
-
-  // Local label de-overlap: each node's collision radius approximates its
-  // label footprint, so only nodes whose labels would touch get pushed apart.
-  // The layout is flattened to a plane (numDimensions=2), so world-space
-  // separation maps 1:1 to the screen — radii can stay tight and the layout
-  // compact, unlike in 3D where depth-axis separation bought nothing.
-  useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    fg.d3Force('collide', forceCollide((node) => {
-      const { isRoot, hasTitle, name } = node as GraphNode;
-      const circle = isRoot ? 8 : 5.5;
-      if (!hasTitle) return circle;
-      const textHeight = isRoot ? ROOT_LABEL_HEIGHT : LABEL_HEIGHT;
-      const widest = Math.max(...name.split('\n').map((l) => l.length));
-      return Math.max(circle, widest * textHeight * 0.22);
-    }));
-  }, [graphData]);
+    const halfW = Math.max((bbox.maxX - bbox.minX) / 2, 20) * 1.05;
+    const halfH = Math.max((bbox.maxY - bbox.minY) / 2, 20) * 1.05;
+    const cx = (bbox.minX + bbox.maxX) / 2;
+    const cy = (bbox.minY + bbox.maxY) / 2;
+    const aspect = dimensions.width / dimensions.height;
+    const halfFov = ((fg.camera().fov / 2) * Math.PI) / 180;
+    const dist = Math.max(halfH, halfW / aspect) / Math.tan(halfFov);
+    fg.cameraPosition({ x: cx, y: cy, z: dist }, { x: cx, y: cy, z: 0 }, firstFit.current ? 0 : 400);
+    firstFit.current = false;
+  }, [bbox, dimensions]);
 
-  const needsFinalFit = useRef(false);
+  // Refit on data or container changes; the short debounce coalesces the
+  // mobile sheet's continuous resizes.
   useEffect(() => {
-    needsFinalFit.current = true;
-    const timer = setTimeout(fitGraph, 500);
+    const timer = setTimeout(fitGraph, 50);
     return () => clearTimeout(timer);
-  }, [graphData, fitGraph]);
-
-  const handleEngineStop = useCallback(() => {
-    if (!needsFinalFit.current) return; // don't re-zoom after user node drags
-    needsFinalFit.current = false;
-    fitGraph();
   }, [fitGraph]);
 
   // Force node object re-creation when colors change
@@ -271,12 +292,6 @@ export function NetworkView({
     return group;
   }, [nodeColors]);
 
-  const nodeVal = useCallback((node: GraphNode) => {
-    if (!node.hasTitle) return 0.5;
-    if (node.isRoot) return 4;
-    return 2;
-  }, []);
-
   const linkColor = useCallback((link: GraphLink) => {
     return link.isLabelEdge ? 'rgba(200, 200, 200, 0.35)' : '#222222';
   }, []);
@@ -318,12 +333,11 @@ export function NetworkView({
         width={dimensions.width}
         height={dimensions.height}
         numDimensions={2}
+        cooldownTicks={0}
         graphData={graphData}
-        nodeVal={nodeVal}
         nodeThreeObject={nodeThreeObject}
         onNodeClick={(node: GraphNode) => onSelectNode?.(node.id)}
         onBackgroundClick={() => onResetView?.()}
-        onEngineStop={handleEngineStop}
         nodeLabel={() => ''}
         linkLabel={(link: GraphLink) => {
           if (!link.labelName) return '';
