@@ -101,6 +101,11 @@ export function ThoughtsList({
   // Labels only apply to real thoughts — the project root pseudo-node is not
   // a taggable entity in the v2 model.
   const isProjectRoot = !!activeNode?.isRoot;
+  // At the mobile root the TopBar already shows the project name — drop the
+  // duplicate title here (rename lives on the TopBar title instead). Read-only
+  // roots also lose the colour dot, leaving nothing: drop the whole header.
+  const hideRootTitle = !!createFab && isProjectRoot;
+  const hideHeader = hideRootTitle && !!readOnly;
   const { thoughtLabels, edgeRelationships, assignLabel, unassignLabel, refresh } = useThoughtLabels(
     isProjectRoot ? undefined : activeNode?.id,
     activeNode?.projectId,
@@ -191,10 +196,11 @@ export function ThoughtsList({
 
   return (
     <div className="thoughts-list">
+      {!hideHeader && (
       <div className="thoughts-list-header">
         <div className="thoughts-list-header-text">
           <div className="thoughts-list-title-row">
-            {editingTitle ? (
+            {!hideRootTitle && (editingTitle ? (
               <input
                 ref={titleInputRef}
                 className="thoughts-list-title-input"
@@ -212,7 +218,7 @@ export function ThoughtsList({
               <h2 onClick={startEditTitle} className="thoughts-list-title-editable">
                 {activeNode?.title || 'Untitled'}
               </h2>
-            )}
+            ))}
             {!readOnly && (
             <div className="node-color-picker" ref={colorPickerRef}>
               <button
@@ -345,6 +351,7 @@ export function ThoughtsList({
           </button>
         )}
       </div>
+      )}
       {pickerOpen && createPortal(
         <LabelPicker
           thoughtLabels={thoughtLabels}

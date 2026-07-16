@@ -17,7 +17,7 @@ import './Shell.css';
 
 export function Shell() {
   const { user, loading: authLoading, logout } = useAuth();
-  const { projects, createProject, cloneProject, removeProject, setProjectPublic, unsubscribeProject } = useProjects();
+  const { projects, createProject, cloneProject, renameProject, removeProject, setProjectPublic, unsubscribeProject } = useProjects();
   const { selectedRootId, setSelectedRootId } = useSelectedRoot();
   const [mcpOpen, setMcpOpen] = useState(false);
   const [discoverOpen, setDiscoverOpen] = useState(false);
@@ -73,6 +73,11 @@ export function Shell() {
           projectName={selectedProject?.name}
           onMenu={() => openDrawer()}
           onClone={selectedProject ? handleCloneProject : undefined}
+          onRename={
+            selectedProject?.role === 'owner'
+              ? (name) => renameProject(selectedProject.id, name)
+              : undefined
+          }
         />
       )}
       {isMobile && drawerOpen && (

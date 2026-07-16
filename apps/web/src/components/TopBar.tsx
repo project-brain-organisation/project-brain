@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import './TopBar.css';
 
 interface Props {
@@ -6,12 +6,31 @@ interface Props {
   onMenu: () => void;
   /** Clone the current graph into a project the user owns (any graph, incl. read-only). */
   onClone?: () => Promise<void>;
+  /** Owned graphs only: makes the title tap-to-edit. This is the sole rename
+   *  path on mobile — the ThoughtsList title is hidden at the project root. */
+  onRename?: (name: string) => void;
 }
 
 /** Mobile top app bar: leading hamburger + centered project name + clone action.
  *  Branding lives in the drawer header (the Sidebar logo). */
-export function TopBar({ projectName, onMenu, onClone }: Props) {
+export function TopBar({ projectName, onMenu, onClone, onRename }: Props) {
   const [cloning, setCloning] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function startEdit() {
+    setDraft(projectName ?? '');
+    setEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function commit() {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== projectName) onRename?.(trimmed);
+  }
+
   return (
     <header className="top-bar">
       <button className="top-bar-menu" onClick={onMenu} aria-label="Open menu">
@@ -21,7 +40,26 @@ export function TopBar({ projectName, onMenu, onClone }: Props) {
           <line x1="4" y1="18" x2="20" y2="18" />
         </svg>
       </button>
-      <h1 className="top-bar-title">{projectName || 'Project Brain'}</h1>
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="top-bar-title-input"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+      ) : (
+        <h1
+          className={`top-bar-title${onRename ? ' top-bar-title--editable' : ''}`}
+          onClick={onRename ? startEdit : undefined}
+        >
+          {projectName || 'Project Brain'}
+        </h1>
+      )}
       {onClone ? (
         <button
           className="top-bar-clone"

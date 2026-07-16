@@ -61,3 +61,30 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.top-bar-title--editable {
+  cursor: pointer;
+}
+.top-bar-title--editable:active {
+  background: var(--surface2);
+  border-radius: 2px;
+}
+
+/* Same footprint as the title it replaces while renaming */
+.top-bar-title-input {
+  position: absolute;
+  left: 50%;
+  top: calc(env(safe-area-inset-top) + 28px);
+  transform: translate(-50%, -50%);
+  width: 55vw;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+}
