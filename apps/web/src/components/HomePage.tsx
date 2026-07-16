@@ -175,43 +175,49 @@ export function HomePage() {
     ? rootNode
     : thoughts.find((t) => t.id === activeNodeId);
 
+  // A focused node's neighbourhood: direct children plus relationship
+  // neighbours. Shared by the thought list and the graph so they always show
+  // the same set.
+  const nodesAround = useCallback((id: string) => {
+    const around = thoughts.filter((t) => t.parentId === id);
+    const present = new Set(around.map((t) => t.id));
+    present.add(id);
+    for (const rel of edgeRelationships) {
+      const otherId =
+        rel.sourceId === id ? rel.targetId :
+        rel.targetId === id ? rel.sourceId : null;
+      if (!otherId || present.has(otherId)) continue;
+      const other = thoughts.find((t) => t.id === otherId);
+      if (!other) continue;
+      around.push(other);
+      present.add(otherId);
+    }
+    return around;
+  }, [thoughts, edgeRelationships]);
+
   const visibleThoughts = useMemo(() => {
     if (!selectedRootId) {
       return [];
     }
     if (focusedNodeId) {
-      // Drilled into a specific node: show its direct children
-      return thoughts.filter((t) => t.parentId === focusedNodeId);
+      return nodesAround(focusedNodeId);
     }
     // Project root view: show all thoughts in the project
     return thoughts;
-  }, [thoughts, selectedRootId, focusedNodeId]);
+  }, [thoughts, selectedRootId, focusedNodeId, nodesAround]);
 
   // Mind map shows the active node + visible thoughts. Top-level thoughts hang
   // off the project root, so substitute the project id for null parents.
-  // Drilled in, the focused node's relationship neighbours join its children —
-  // left with a null parent so they hang off the relationship edge alone.
+  // (When drilled in, the root isn't in the graph, so a relationship
+  // neighbour's substituted parent link simply dangles and the node hangs off
+  // its relationship edge instead.)
   const networkThoughts = useMemo(() => {
     if (!activeNode) return [];
     const withParents = visibleThoughts.map((t) =>
       t.parentId ? t : { ...t, parentId: selectedRootId ?? null },
     );
-    const nodes = [activeNode, ...withParents];
-    if (focusedNodeId) {
-      const present = new Set(nodes.map((t) => t.id));
-      for (const rel of edgeRelationships) {
-        const otherId =
-          rel.sourceId === focusedNodeId ? rel.targetId :
-          rel.targetId === focusedNodeId ? rel.sourceId : null;
-        if (!otherId || present.has(otherId)) continue;
-        const other = thoughts.find((t) => t.id === otherId);
-        if (!other) continue;
-        nodes.push({ ...other, parentId: null });
-        present.add(otherId);
-      }
-    }
-    return nodes;
-  }, [activeNode, visibleThoughts, selectedRootId, focusedNodeId, edgeRelationships, thoughts]);
+    return [activeNode, ...withParents];
+  }, [activeNode, visibleThoughts, selectedRootId]);
 
   if (loading || projectsLoading) {
     return <div className="home-page-loading">Loading...</div>;
@@ -261,7 +267,7 @@ export function HomePage() {
     const drillNode = drillId ? thoughts.find((t) => t.id === drillId) ?? rootNode : rootNode;
     const drillTargetId = (drillNode && !drillNode.isRoot ? drillNode.id : selectedRootId) ?? undefined;
     const drillVisible = drillNode && !drillNode.isRoot
-      ? thoughts.filter((t) => t.parentId === drillNode.id)
+      ? nodesAround(drillNode.id)
       : thoughts;
     const drilled = !!drillPath?.length && !!drillNode && !drillNode.isRoot;
 

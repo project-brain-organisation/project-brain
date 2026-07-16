@@ -83,11 +83,6 @@ interface GraphLink {
   labelColor?: string;
 }
 
-/** Stable link identity; the library swaps id strings for node objects on ingest. */
-function linkKey(link: GraphLink): string {
-  const id = (end: unknown) => (typeof end === 'object' ? (end as GraphNode).id : end);
-  return `${id(link.source)}:${id(link.target)}`;
-}
 
 export function NetworkView({
   thoughts,
@@ -307,53 +302,6 @@ export function NetworkView({
     return link.isLabelEdge ? 1 : 0.4;
   }, []);
 
-  // Relationship edges carry their label name at the link midpoint, but keep
-  // it hidden unless a node is focused (all labels show) or that edge was
-  // clicked/tapped (mobile has no hover). Sprites register by link key —
-  // stale entries from replaced graph data are harmless orphans — and an
-  // effect toggles visibility directly, since with the engine stopped the
-  // library offers no reliable per-frame hook.
-  const [selectedLink, setSelectedLink] = useState<string | null>(null);
-  const labelVis = useRef({ all: false, selected: null as string | null });
-  labelVis.current = { all: !!focusedNodeId, selected: selectedLink };
-  const labelSprites = useRef(new Map<string, SpriteText>());
-
-  useEffect(() => {
-    for (const [key, sprite] of labelSprites.current) {
-      sprite.visible = labelVis.current.all || labelVis.current.selected === key;
-    }
-  }, [selectedLink, focusedNodeId, graphData]);
-
-  const linkThreeObject = useCallback((link: GraphLink) => {
-    if (!link.labelName) return new Group();
-    const sprite = new SpriteText(link.labelName);
-    sprite.color = link.labelColor || '#666666';
-    sprite.fontFace = 'Syne, sans-serif';
-    sprite.textHeight = 2;
-    sprite.material.depthTest = false;
-    sprite.renderOrder = 3;
-    const key = linkKey(link);
-    sprite.visible = labelVis.current.all || labelVis.current.selected === key;
-    labelSprites.current.set(key, sprite);
-    return sprite;
-  }, []);
-
-  const linkPositionUpdate = useCallback((sprite: any, { start, end }: { start: any; end: any }) => {
-    if (sprite) {
-      sprite.position.set(
-        (start.x + end.x) / 2,
-        (start.y + end.y) / 2,
-        (start.z + end.z) / 2,
-      );
-    }
-  }, []);
-
-  const handleLinkClick = useCallback((link: GraphLink) => {
-    if (!link.labelName) return;
-    const key = linkKey(link);
-    setSelectedLink((prev) => (prev === key ? null : key));
-  }, []);
-
   if (thoughts.length === 0) {
     return <div className="network-view-empty">No thoughts yet</div>;
   }
@@ -369,12 +317,8 @@ export function NetworkView({
         graphData={graphData}
         nodeThreeObject={nodeThreeObject}
         onNodeClick={(node: GraphNode) => onSelectNode?.(node.id)}
-        onLinkClick={handleLinkClick}
         linkHoverPrecision={4}
-        onBackgroundClick={() => {
-          setSelectedLink(null);
-          onResetView?.();
-        }}
+        onBackgroundClick={() => onResetView?.()}
         nodeLabel={() => ''}
         linkLabel={(link: GraphLink) => {
           if (!link.labelName) return '';
@@ -383,9 +327,6 @@ export function NetworkView({
         }}
         linkColor={linkColor}
         linkWidth={linkWidth}
-        linkThreeObjectExtend={true}
-        linkThreeObject={linkThreeObject}
-        linkPositionUpdate={linkPositionUpdate}
         linkOpacity={0.4}
         backgroundColor="rgba(0,0,0,0)"
         showNavInfo={false}
