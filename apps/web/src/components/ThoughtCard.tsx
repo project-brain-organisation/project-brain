@@ -97,8 +97,11 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
     setPickerOpen(true);
   }
 
+  const hasActions = !!onNavigate || !!(onDelete && !readOnly);
+
   return (
-    <div className="thought-card">
+    <div className={`thought-card${hasActions ? ' thought-card--has-actions' : ''}`}>
+      {hasActions && (
       <div className="thought-card-actions">
         {onNavigate && (
           <button
@@ -119,6 +122,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
           </button>
         )}
       </div>
+      )}
       <div className="thought-card-top">
         <span className="thought-card-time">{formatTime(thought.createdAt)}</span>
         {editingTitle ? (

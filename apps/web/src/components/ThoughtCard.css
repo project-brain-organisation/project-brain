@@ -61,6 +61,11 @@
   margin-bottom: 7px;
   flex-wrap: wrap;
 }
+/* Reserve the action-button zone so long titles wrap before it
+ * instead of sitting under the hover-revealed icons. */
+.thought-card--has-actions .thought-card-top {
+  padding-right: 48px;
+}
 .thought-card-time {
   font-family: var(--font-mono);
   font-size: 9px;
@@ -222,8 +227,8 @@
     padding: 8px 10px;
     border-radius: 4px;
   }
-  /* Touch: no hover to reveal actions — keep them visible and tappable.
-   * Nudge up + square off so their center sits on the title line, matching desktop. */
+  /* Touch: no hover to reveal actions — keep them visible and tappable
+   * in their own top-right strip, with the card content pushed below it. */
   .thought-card-actions {
     opacity: 1;
     top: 0;
@@ -240,6 +245,11 @@
   .thought-card-top {
     gap: 6px;
     margin-bottom: 4px;
+  }
+  /* Icons are 30px tall from the card's top edge (card padding is 8px). */
+  .thought-card--has-actions .thought-card-top {
+    margin-top: 24px;
+    padding-right: 0;
   }
   .thought-card-time { font-size: 8.5px; }
   .thought-card-tag { font-size: 8.5px; padding: 0 4px; }
