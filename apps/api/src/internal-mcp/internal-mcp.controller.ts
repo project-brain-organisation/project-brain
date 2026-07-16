@@ -400,6 +400,12 @@ export class InternalMcpController {
     );
   }
 
+  @Post('remove-relationship')
+  removeRelationship(@Req() req: Request, @Body() body: { relationshipId: string }) {
+    const userId = this.userIdFromHeaders(req);
+    return this.relationshipsService.remove(userId, body.relationshipId, 'mcp');
+  }
+
   @Post('list-relationships')
   listRelationships(
     @Req() req: Request,

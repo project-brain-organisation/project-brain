@@ -148,6 +148,10 @@ export class ApiClient {
     return this.post('create-relationship', { userId, scope }, params);
   }
 
+  removeRelationship(userId: string, relationshipId: string, scope?: string) {
+    return this.post('remove-relationship', { userId, scope }, { relationshipId });
+  }
+
   listRelationships(
     userId: string,
     params: { projectId: string; kind?: 'hierarchy' | 'tag' | 'edge' },

@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createCreateRelationshipTool, createListRelationshipsTool } from './relationship-tools.js';
+import {
+  createCreateRelationshipTool,
+  createListRelationshipsTool,
+  createRemoveRelationshipTool,
+} from './relationship-tools.js';
 import type { ApiResult } from './tool-contract.js';
 
 const projectId = '550e8400-e29b-41d4-a716-446655440000';
@@ -65,6 +69,52 @@ describe('create_relationship tool', () => {
     const result = await tool.execute({ userId: 'u1' }, args);
     assert.equal(result.ok, false);
     assert.equal((result as any).status, 409);
+  });
+});
+
+describe('remove_relationship tool', () => {
+  const relationshipId = '550e8400-e29b-41d4-a716-446655440004';
+
+  function makeTool(result: ApiResult = { ok: true, status: 200, data: { deleted: true } }) {
+    return createRemoveRelationshipTool({
+      removeRelationship: async () => result,
+    });
+  }
+
+  it('has correct metadata', () => {
+    const tool = makeTool();
+    assert.equal(tool.name, 'remove_relationship');
+    assert.equal(tool.inputSchema.required?.includes('relationshipId'), true);
+  });
+
+  it('parseArguments rejects a non-uuid id', () => {
+    const tool = makeTool();
+    assert.throws(() => tool.parseArguments({ relationshipId: 'nope' }));
+  });
+
+  it('execute passes userId, relationshipId, scope to dep', async () => {
+    let captured: { userId?: string; relationshipId?: string; scope?: string } = {};
+    const tool = createRemoveRelationshipTool({
+      removeRelationship: async (userId, relId, scope) => {
+        captured = { userId, relationshipId: relId, scope };
+        return { ok: true, status: 200, data: { deleted: true } };
+      },
+    });
+
+    const args = tool.parseArguments({ relationshipId });
+    await tool.execute({ userId: 'user-2', scope: 'proj-1' }, args);
+
+    assert.equal(captured.userId, 'user-2');
+    assert.equal(captured.relationshipId, relationshipId);
+    assert.equal(captured.scope, 'proj-1');
+  });
+
+  it('execute surfaces error results (e.g. read-only graph 403)', async () => {
+    const tool = makeTool({ ok: false, status: 403, error: 'read-only graph' });
+    const args = tool.parseArguments({ relationshipId });
+    const result = await tool.execute({ userId: 'u1' }, args);
+    assert.equal(result.ok, false);
+    assert.equal((result as any).status, 403);
   });
 });
 

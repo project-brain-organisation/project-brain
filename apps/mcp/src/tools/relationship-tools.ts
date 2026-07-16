@@ -26,6 +26,22 @@ export function createCreateRelationshipTool(deps: CreateRelationshipDeps): Tool
   });
 }
 
+export interface RemoveRelationshipDeps {
+  removeRelationship: (userId: string, relationshipId: string, scope?: string) => Promise<ApiResult>;
+}
+
+export function createRemoveRelationshipTool(deps: RemoveRelationshipDeps): ToolDefinition {
+  return defineTool({
+    name: 'remove_relationship',
+    description:
+      'Remove a relationship (edge) by its id. Find the id with list_relationships. ' +
+      'Works on any kind — edge, hierarchy, or tag — and only affects the relationship, ' +
+      'never the thoughts or labels it connects.',
+    schema: z.object({ relationshipId: z.string().uuid() }),
+    execute: (ctx, { relationshipId }) => deps.removeRelationship(ctx.userId, relationshipId, ctx.scope),
+  });
+}
+
 export interface ListRelationshipsDeps {
   listRelationships: (
     userId: string,
