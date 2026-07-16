@@ -110,15 +110,6 @@
 
 /* ── Network area controls ── */
 
-/* Mode toggle: top-left of the graph pane (desktop) — leading-edge alignment,
- * matching the mobile placement; Relationships anchors the opposite corner */
-.network-toggle-wrap {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 10;
-}
-
 .network-controls {
   position: absolute;
   top: 12px;
@@ -127,44 +118,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.network-view-toggle {
-  display: flex;
-  border: 1px solid var(--border2);
-  border-radius: 2px;
-  background: var(--surface);
-  overflow: hidden;
-}
-
-.network-toggle-btn {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  padding: 5px 10px;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.network-toggle-btn + .network-toggle-btn {
-  border-left: 1px solid var(--border2);
-}
-
-.network-toggle-btn:hover {
-  color: var(--text);
-}
-
-.network-toggle-btn--active {
-  background: var(--text);
-  color: #fff;
-}
-
-.network-toggle-btn--active:hover {
-  color: #fff;
 }
 
 .network-rel-btn {
@@ -219,18 +172,4 @@
   position: relative;
   flex: 1;
   min-height: 0;
-}
-
-/* Mobile mode toggle: positions the shared desktop-styled .network-view-toggle
- * top-left (M3 leading-edge alignment), with a small hit-area bump for touch */
-.mobile-mode-toggle {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 10;
-}
-
-.mobile-mode-toggle .network-toggle-btn {
-  font-size: 10px;
-  padding: 8px 12px;
 }

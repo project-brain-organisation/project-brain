@@ -5,7 +5,7 @@ import { useProjects } from '../hooks/useProjects';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useHistoryFlag } from '../hooks/useHistoryFlag';
 import { useSelectedRoot } from '../contexts/SelectedRootContext';
-import { NetworkView, type NetworkViewMode } from './NetworkView';
+import { NetworkView } from './NetworkView';
 import { RelationshipsDialog } from './RelationshipsDialog';
 import { ThoughtsList } from './ThoughtsList';
 import { ThoughtSheet, type SheetState } from './ThoughtSheet';
@@ -13,11 +13,6 @@ import { Fab } from './Fab';
 import './HomePage.css';
 
 const DEFAULT_NODE_COLOR = '#e8a838';
-const VIEW_MODE_KEY = 'pb-network-view-mode';
-
-function loadViewMode(): NetworkViewMode {
-  return localStorage.getItem(VIEW_MODE_KEY) === 'graph' ? 'graph' : 'mindmap';
-}
 
 /** Present the selected project as a root pseudo-thought so the list/graph
  *  components can treat it like any other node. */
@@ -52,7 +47,6 @@ export function HomePage() {
   const [projectName, setProjectName] = useState('');
   // focusedNodeId drills into a child node within the selected project
   const [focusedNodeId, setFocusedNodeId] = useState<string | undefined>(undefined);
-  const [viewMode, setViewMode] = useState<NetworkViewMode>(loadViewMode);
   const [relDialogOpen, setRelDialogOpen] = useState(false);
 
   // Mobile: single-screen layout driven by the route; the node preview sheet
@@ -83,11 +77,6 @@ export function HomePage() {
   const drillToRoot = useCallback(() => {
     if (drillPath?.length) popDrill(drillPath.length);
   }, [drillPath, popDrill]);
-
-  const handleViewModeChange = useCallback((mode: NetworkViewMode) => {
-    setViewMode(mode);
-    localStorage.setItem(VIEW_MODE_KEY, mode);
-  }, []);
 
   // Auto-select the first project on first load
   const hasAutoSelected = useRef(false);
@@ -200,16 +189,13 @@ export function HomePage() {
 
   // Mind map shows the active node + visible thoughts. Top-level thoughts hang
   // off the project root, so substitute the project id for null parents.
-  // Graph mode shows every thought in the project — no root pseudo-node, no
-  // drill-down; NetworkView applies the one-hop filter around focusedNodeId.
   const networkThoughts = useMemo(() => {
-    if (viewMode === 'graph') return thoughts;
     if (!activeNode) return [];
     const withParents = visibleThoughts.map((t) =>
       t.parentId ? t : { ...t, parentId: selectedRootId ?? null },
     );
     return [activeNode, ...withParents];
-  }, [viewMode, thoughts, activeNode, visibleThoughts, selectedRootId]);
+  }, [activeNode, visibleThoughts, selectedRootId]);
 
   if (loading || projectsLoading) {
     return <div className="home-page-loading">Loading...</div>;
@@ -277,26 +263,9 @@ export function HomePage() {
                   openSheet(id);
                 }}
                 onResetView={() => handleSheetState('closed')}
-                mode={viewMode}
                 edgeRels={edgeRelationships}
                 focusedNodeId={sheetNodeId}
               />
-              <div className="mobile-mode-toggle" role="group" aria-label="Graph mode">
-                <div className="network-view-toggle">
-                  <button
-                    className={`network-toggle-btn ${viewMode === 'mindmap' ? 'network-toggle-btn--active' : ''}`}
-                    onClick={() => handleViewModeChange('mindmap')}
-                  >
-                    Mind map
-                  </button>
-                  <button
-                    className={`network-toggle-btn ${viewMode === 'graph' ? 'network-toggle-btn--active' : ''}`}
-                    onClick={() => handleViewModeChange('graph')}
-                  >
-                    Graph
-                  </button>
-                </div>
-              </div>
             </div>
             <ThoughtSheet
               thought={sheetThought}
@@ -388,26 +357,9 @@ export function HomePage() {
           nodeColors={nodeColors}
           onSelectNode={handleSelectNode}
           onResetView={handleResetView}
-          mode={viewMode}
           edgeRels={edgeRelationships}
           focusedNodeId={focusedNodeId}
         />
-        <div className="network-toggle-wrap">
-          <div className="network-view-toggle">
-            <button
-              className={`network-toggle-btn ${viewMode === 'mindmap' ? 'network-toggle-btn--active' : ''}`}
-              onClick={() => handleViewModeChange('mindmap')}
-            >
-              Mind map
-            </button>
-            <button
-              className={`network-toggle-btn ${viewMode === 'graph' ? 'network-toggle-btn--active' : ''}`}
-              onClick={() => handleViewModeChange('graph')}
-            >
-              Graph
-            </button>
-          </div>
-        </div>
         {!readOnly && (
           <div className="network-controls">
             <button className="network-rel-btn" onClick={() => setRelDialogOpen(true)}>

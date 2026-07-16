@@ -43,9 +43,8 @@ the FAB changes with the destination).
 
 **Graph screen:**
 - `NetworkView` full-bleed between top bar and tab bar.
-- **Mind map / Graph mode toggle** as a floating segmented control, top-left
-  (M3 leading-edge alignment for view-switcher chips; iterated from
-  top-center → top-right → top-left with user feedback 2026-07-14).
+- ~~Mind map / Graph mode toggle~~ — removed 2026-07-16; mind map is the only
+  view now (see [drop-graph-mode note in knowledge-graph-view.md](knowledge-graph-view.md)).
 - **FAB bottom-right** = **"Add relationship"**: a plain round `+` FAB (user
   preference over the extended icon+label form), opening `RelationshipsDialog`
   as a **full-screen dialog** (Material's mobile pattern for create/edit tasks).
@@ -109,7 +108,7 @@ for low-end phones — revisit if real users hit it.
       closes on project select and on back (history state)
 - [x] `TabBar`: two tabs, active state, safe-area padding
 - [x] Thoughts screen: flat list + FAB (new thought), FAB docked above tab bar
-- [x] Graph screen: full-bleed `NetworkView`, top-center segmented mode toggle
+- [x] Graph screen: full-bleed `NetworkView` (mode toggle since removed, 2026-07-16)
 - [x] "Add relationship" extended FAB anchored to the bottom sheet (rides peek
       height, scales out at full expansion)
 - [x] `RelationshipsDialog` responsive pass: full-screen dialog on mobile

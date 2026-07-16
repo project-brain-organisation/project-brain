@@ -1,7 +1,10 @@
 # Feature: Knowledge graph view + relationship dialog
 
-**Status:** implemented 2026-07-13 — headless-browser verified (both views, one-hop focus
-filter, dialog rendering); manual pass of dialog create/delete + duplicate-409 pending
+**Status:** implemented 2026-07-13; **graph mode REMOVED 2026-07-16** — the graph/mind-map
+toggle and the pure-relationship view below are gone (the view wasn't working well).
+Mind map is the only view; it kept the relationship overlay edges and now renders their
+label names at the link midpoint (previously graph-mode-only). The RelationshipsDialog
+is untouched. The rest of this doc is historical.
 **Created:** 2026-07-13
 **Why:** The network diagram only shows the hierarchy mind map (solid edges) with label
 co-occurrence overlaid as grey edges. There is no way to see the graph as a pure
