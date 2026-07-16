@@ -65,9 +65,13 @@
   padding: 0 16px 24px;
 }
 
-/* The rest of the focused subgraph, listed under the card as tappable rows. */
+/* The rest of the focused subgraph, rendered as full cards under the
+ * focused one. */
 .thought-sheet-neighbours {
   margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .thought-sheet-neighbours-title {
@@ -76,29 +80,6 @@
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: var(--muted);
-  margin-bottom: 8px;
-}
-
-.thought-sheet-neighbour {
-  display: block;
-  width: 100%;
-  min-height: 48px;
-  padding: 12px;
-  text-align: left;
-  font: inherit;
-  font-size: 14px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border2);
-  border-radius: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.thought-sheet-neighbour + .thought-sheet-neighbour {
-  margin-top: 8px;
 }
 
 /* Anchored FAB: child of the sheet, pinned above its top edge, so it rides

@@ -314,7 +314,8 @@ export function HomePage() {
               onUpdate={(id, data) => updateThought(id, data)}
               onDelete={(id) => {
                 removeThought(id);
-                handleSheetState('closed');
+                // Deleting a neighbour card keeps the sheet on the focused node
+                if (id === sheetNodeId) handleSheetState('closed');
               }}
               readOnly={readOnly}
               fab={

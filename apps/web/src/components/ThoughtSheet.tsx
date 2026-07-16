@@ -19,7 +19,8 @@ interface Props {
   state: SheetState;
   onStateChange: (state: SheetState) => void;
   /** The rest of the focused subgraph (parent, children, relationship
-   *  neighbours), listed under the card; tapping one refocuses the sheet. */
+   *  neighbours), rendered as full cards under the focused one; the card's
+   *  → action refocuses the sheet on that node. */
   neighbours?: Thought[];
   onSelectNeighbour?: (id: string) => void;
   onUpdate: (id: string, data: { title?: string; body?: string }) => void;
@@ -128,13 +129,14 @@ export function ThoughtSheet({ thought, state, onStateChange, neighbours, onSele
             <div className="thought-sheet-neighbours">
               <div className="thought-sheet-neighbours-title">Connected</div>
               {neighbours.map((n) => (
-                <button
+                <ThoughtCard
                   key={n.id}
-                  className="thought-sheet-neighbour"
-                  onClick={() => onSelectNeighbour?.(n.id)}
-                >
-                  {n.title || n.body || 'Untitled'}
-                </button>
+                  thought={n}
+                  onUpdate={onUpdate}
+                  onDelete={onDelete}
+                  onNavigate={onSelectNeighbour}
+                  readOnly={readOnly}
+                />
               ))}
             </div>
           )}
