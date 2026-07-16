@@ -65,6 +65,42 @@
   padding: 0 16px 24px;
 }
 
+/* The rest of the focused subgraph, listed under the card as tappable rows. */
+.thought-sheet-neighbours {
+  margin-top: 16px;
+}
+
+.thought-sheet-neighbours-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.thought-sheet-neighbour {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px;
+  text-align: left;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.thought-sheet-neighbour + .thought-sheet-neighbour {
+  margin-top: 8px;
+}
+
 /* Anchored FAB: child of the sheet, pinned above its top edge, so it rides
  * every height change (snaps and finger-drags alike). Closed sheet =
  * height 0 at the container bottom, which parks the FAB 16px above it. */

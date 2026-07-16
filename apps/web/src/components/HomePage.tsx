@@ -258,6 +258,19 @@ export function HomePage() {
     const sheetThought = sheetNodeId ? thoughts.find((t) => t.id === sheetNodeId) : undefined;
     const sheetState: SheetState = sheetThought ? (sheetExpanded ? 'expanded' : 'peek') : 'closed';
 
+    // Everything the focused subgraph shows besides the node itself: parent
+    // (when it's a real thought, not the project root), children, and
+    // relationship neighbours.
+    const sheetParent = sheetThought
+      ? thoughts.find((t) => t.id === sheetThought.parentId)
+      : undefined;
+    const sheetNeighbours = sheetThought
+      ? [
+          ...(sheetParent ? [sheetParent] : []),
+          ...nodesAround(sheetThought.id).filter((t) => t.id !== sheetParent?.id),
+        ]
+      : [];
+
     const handleSheetState = (s: SheetState) => {
       if (s === 'closed') closeSheet();
       setSheetExpanded(s === 'expanded');
@@ -267,7 +280,7 @@ export function HomePage() {
     const drillNode = drillId ? thoughts.find((t) => t.id === drillId) ?? rootNode : rootNode;
     const drillTargetId = (drillNode && !drillNode.isRoot ? drillNode.id : selectedRootId) ?? undefined;
     const drillVisible = drillNode && !drillNode.isRoot
-      ? nodesAround(drillNode.id)
+      ? thoughts.filter((t) => t.parentId === drillNode.id)
       : thoughts;
     const drilled = !!drillPath?.length && !!drillNode && !drillNode.isRoot;
 
@@ -293,6 +306,11 @@ export function HomePage() {
               thought={sheetThought}
               state={sheetState}
               onStateChange={handleSheetState}
+              neighbours={sheetNeighbours}
+              onSelectNeighbour={(id) => {
+                setSheetExpanded(false);
+                openSheet(id);
+              }}
               onUpdate={(id, data) => updateThought(id, data)}
               onDelete={(id) => {
                 removeThought(id);

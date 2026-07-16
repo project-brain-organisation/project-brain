@@ -18,6 +18,10 @@ interface Props {
   thought?: Thought;
   state: SheetState;
   onStateChange: (state: SheetState) => void;
+  /** The rest of the focused subgraph (parent, children, relationship
+   *  neighbours), listed under the card; tapping one refocuses the sheet. */
+  neighbours?: Thought[];
+  onSelectNeighbour?: (id: string) => void;
   onUpdate: (id: string, data: { title?: string; body?: string }) => void;
   onDelete: (id: string) => void;
   /** Anchored FAB: rendered as a child so it rides the sheet's top edge —
@@ -32,7 +36,7 @@ interface Props {
  *  In-flow (not an overlay): its height pushes the graph area up, so the
  *  graph is never covered. No scrim — Material reserves scrims for modal
  *  sheets. */
-export function ThoughtSheet({ thought, state, onStateChange, onUpdate, onDelete, fab, readOnly }: Props) {
+export function ThoughtSheet({ thought, state, onStateChange, neighbours, onSelectNeighbour, onUpdate, onDelete, fab, readOnly }: Props) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ startY: number; startHeight: number; containerH: number; moved: boolean } | null>(null);
   // The click event fires after pointerup has cleared `drag`; remember whether
@@ -119,6 +123,20 @@ export function ThoughtSheet({ thought, state, onStateChange, onUpdate, onDelete
         <div className="thought-sheet-body">
           {thought && (
             <ThoughtCard thought={thought} onUpdate={onUpdate} onDelete={onDelete} readOnly={readOnly} />
+          )}
+          {thought && neighbours && neighbours.length > 0 && (
+            <div className="thought-sheet-neighbours">
+              <div className="thought-sheet-neighbours-title">Connected</div>
+              {neighbours.map((n) => (
+                <button
+                  key={n.id}
+                  className="thought-sheet-neighbour"
+                  onClick={() => onSelectNeighbour?.(n.id)}
+                >
+                  {n.title || n.body || 'Untitled'}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </div>
