@@ -78,11 +78,14 @@ export function HomePage() {
     if (drillPath?.length) popDrill(drillPath.length);
   }, [drillPath, popDrill]);
 
-  // Auto-select the first project on first load
+  // On first load, keep the restored selection if it still exists;
+  // otherwise fall back to the first project.
   const hasAutoSelected = useRef(false);
-  if (!hasAutoSelected.current && !projectsLoading && !selectedRootId && projects.length > 0) {
+  if (!hasAutoSelected.current && !projectsLoading && projects.length > 0) {
     hasAutoSelected.current = true;
-    setSelectedRootId(projects[0].id);
+    if (!projects.some((p) => p.id === selectedRootId)) {
+      setSelectedRootId(projects[0].id);
+    }
   }
 
   const selectedProject = projects.find((p) => p.id === selectedRootId);
