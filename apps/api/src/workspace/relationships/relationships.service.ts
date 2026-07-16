@@ -97,6 +97,84 @@ export class RelationshipsService {
     });
   }
 
+  /**
+   * All-or-nothing batch create: one ownership check, one endpoint-validation
+   * select, batched inserts, one SSE event after commit. Applies the same
+   * per-kind endpoint rules as create().
+   */
+  async createBatch(
+    userId: string,
+    projectId: string,
+    items: {
+      sourceId: string;
+      targetId: string;
+      kind: CreateRelationshipDto['kind'];
+      labelId?: string | null;
+    }[],
+    source: 'user' | 'mcp' = 'user',
+  ) {
+    if (items.length === 0) throw new BadRequestException('Batch is empty');
+    await this.projectsService.assertOwnership(userId, projectId);
+
+    const created = await this.db
+      .asUser(userId, async (tx) => {
+        const endpointIds = [...new Set(items.flatMap((r) => [r.sourceId, r.targetId]))];
+        const endpoints = await tx
+          .select()
+          .from(entities)
+          .where(inArray(entities.id, endpointIds));
+        const entityById = new Map(endpoints.map((e) => [e.id, e]));
+
+        for (const item of items) {
+          const src = entityById.get(item.sourceId);
+          const tgt = entityById.get(item.targetId);
+          if (!src) throw new NotFoundException(`Entity ${item.sourceId} not found`);
+          if (!tgt) throw new NotFoundException(`Entity ${item.targetId} not found`);
+          if (src.projectId !== projectId || tgt.projectId !== projectId) {
+            throw new BadRequestException('Cross-project relationships are not allowed');
+          }
+          const rule = endpointRules[item.kind];
+          if (rule && (src.type !== rule.source || tgt.type !== rule.target)) {
+            throw new BadRequestException(rule.error);
+          }
+        }
+
+        // Batched inserts guard against pg's parameter ceiling, cf. clone().
+        const rows = [];
+        for (let i = 0; i < items.length; i += 500) {
+          rows.push(
+            ...(await tx
+              .insert(relationships)
+              .values(
+                items.slice(i, i + 500).map((item) => ({
+                  projectId,
+                  ownerId: userId,
+                  sourceId: item.sourceId,
+                  targetId: item.targetId,
+                  kind: item.kind,
+                  labelId: item.labelId ?? null,
+                })),
+              )
+              .returning()),
+          );
+        }
+        return rows;
+      })
+      .catch((err) => {
+        if (isUniqueViolation(err)) throw new ConflictException('Relationship already exists');
+        throw err;
+      });
+
+    // One coarse event — the web client refetches the workspace snapshot per event.
+    this.workspaceEvents.emit(userId, 'relationship.created', {
+      source,
+      resourceId: created[0].id,
+      projectId,
+    });
+
+    return created;
+  }
+
   async findByProject(userId: string, projectId: string, kind?: 'hierarchy' | 'tag' | 'edge') {
     // Ownership isolation enforced by RLS; assertOwnership removed on read path.
     return this.db.asUser(userId, async (tx) =>

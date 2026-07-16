@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { chunks } from '../../database/schema/index';
 import { ChunkingService } from './chunking.service';
@@ -27,48 +27,43 @@ export class PipelineService {
   ) {}
 
   /**
-   * Re-chunk + re-embed a thought body. Persists chunks inside asUser(ownerId)
-   * so RLS withCheck constraints are satisfied. Embeddings are computed outside
-   * the transaction (no DB write, pure HTTP call) then written back via a second
-   * asUser transaction. Intended to be called fire-and-forget by ThoughtsService.
+   * Chunk + embed one or many thought bodies. All bodies share one embed()
+   * pass (it already batches 64 texts per HTTP call) and the chunks land WITH
+   * their vectors in a single asUser(ownerId) transaction, so RLS withCheck
+   * passes and cost stays flat as the batch grows. Intended to be called
+   * fire-and-forget by ThoughtsService.
    */
   async chunkAndEmbed(
     projectId: string,
-    thoughtId: string,
-    body: string,
+    items: { thoughtId: string; body: string }[],
     ownerId: string,
   ): Promise<void> {
-    const chunkTexts = this.chunkingService.chunk(body);
-    if (chunkTexts.length === 0) return;
-
-    const chunkRows = chunkTexts.map((text, index) => ({
-      projectId,
-      ownerId,
-      thoughtId,
-      body: text,
-      chunkIndex: index,
-    }));
-
-    // Insert chunks under the owner's tenant context so RLS withCheck passes.
-    await this.db.asUser(ownerId, async (tx) => {
-      await tx.insert(chunks).values(chunkRows);
-    });
+    const chunkRows = items.flatMap(({ thoughtId, body }) =>
+      this.chunkingService.chunk(body).map((text, index) => ({
+        projectId,
+        ownerId,
+        thoughtId,
+        body: text,
+        chunkIndex: index,
+      })),
+    );
+    if (chunkRows.length === 0) return;
 
     // Embedding is a pure HTTP call — no DB write, runs outside any transaction.
-    const vectors = await this.embeddingService.embed(chunkTexts);
+    const vectors = await this.embeddingService.embed(chunkRows.map((c) => c.body));
 
-    // Back-fill vector embeddings under the same tenant context.
     await this.db.asUser(ownerId, async (tx) => {
-      for (let index = 0; index < chunkTexts.length; index++) {
-        await tx
-          .update(chunks)
-          .set({ vectorEmbedding: vectors[index] })
-          .where(and(eq(chunks.thoughtId, thoughtId), eq(chunks.chunkIndex, index)));
+      for (let i = 0; i < chunkRows.length; i += 500) {
+        await tx.insert(chunks).values(
+          chunkRows
+            .slice(i, i + 500)
+            .map((row, j) => ({ ...row, vectorEmbedding: vectors[i + j] })),
+        );
       }
     });
 
     this.logger.log(
-      `Chunked+embedded thought ${thoughtId} into ${chunkTexts.length} chunks (project ${projectId})`,
+      `Chunked+embedded ${items.length} thought(s) into ${chunkRows.length} chunks (project ${projectId})`,
     );
   }
 
@@ -87,7 +82,7 @@ export class PipelineService {
     await this.db.asUser(ownerId, async (tx) => {
       await tx.delete(chunks).where(eq(chunks.thoughtId, thoughtId));
     });
-    await this.chunkAndEmbed(projectId, thoughtId, body, ownerId);
+    await this.chunkAndEmbed(projectId, [{ thoughtId, body }], ownerId);
   }
 
   /**

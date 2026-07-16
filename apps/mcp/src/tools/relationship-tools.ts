@@ -2,9 +2,12 @@ import { z } from 'zod/v4';
 import { defineTool, type ApiResult, type ToolDefinition } from './tool-contract.js';
 
 export interface CreateRelationshipDeps {
-  createRelationship: (
+  createRelationships: (
     userId: string,
-    params: { projectId: string; sourceId: string; targetId: string; labelId: string },
+    params: {
+      projectId: string;
+      relationships: { sourceId: string; targetId: string; labelId: string }[];
+    },
     scope?: string,
   ) => Promise<ApiResult>;
 }
@@ -13,16 +16,23 @@ export function createCreateRelationshipTool(deps: CreateRelationshipDeps): Tool
   return defineTool({
     name: 'create_relationship',
     description:
-      'Create a directional, labelled relationship between two thoughts (source → target). ' +
-      'labelId must be an edge label (isEdge = true — see list_labels, or promote one with set_label_edge). ' +
-      'Rendered as an arrowed edge in the knowledge-graph view.',
+      'Create one or more directional, labelled relationships between thoughts ' +
+      '(source → target) as a single all-or-nothing batch. Each labelId must be an edge ' +
+      'label (isEdge = true — see list_labels, or promote one with set_label_edge). ' +
+      'Rendered as arrowed edges in the graph.',
     schema: z.object({
       projectId: z.string().uuid(),
-      sourceId: z.string().uuid(),
-      targetId: z.string().uuid(),
-      labelId: z.string().uuid(),
+      relationships: z
+        .array(
+          z.object({
+            sourceId: z.string().uuid(),
+            targetId: z.string().uuid(),
+            labelId: z.string().uuid(),
+          }),
+        )
+        .min(1),
     }),
-    execute: (ctx, args) => deps.createRelationship(ctx.userId, args, ctx.scope),
+    execute: (ctx, args) => deps.createRelationships(ctx.userId, args, ctx.scope),
   });
 }
 

@@ -72,17 +72,17 @@ export class InternalMcpController {
     return this.thoughtsService.findByProject(userId, body.projectId);
   }
 
-  @Post('create-thought')
-  createThought(
+  @Post('batch-create-thoughts')
+  batchCreateThoughts(
     @Req() req: Request,
-    @Body() body: { body: string; title?: string; projectId: string; parentId?: string },
+    @Body()
+    body: {
+      projectId: string;
+      thoughts: { ref?: string; body: string; title?: string; parentRef?: string; parentId?: string }[];
+    },
   ) {
     const userId = this.userIdFromHeaders(req);
-    return this.thoughtsService.create(
-      userId,
-      { body: body.body, title: body.title, projectId: body.projectId, parentId: body.parentId },
-      'mcp',
-    );
+    return this.thoughtsService.createBatch(userId, body.projectId, body.thoughts, 'mcp');
   }
 
   @Post('edit-thought')
@@ -300,15 +300,16 @@ export class InternalMcpController {
     return this.labelsService.remove(userId, body.labelId, 'mcp');
   }
 
-  @Post('add-label-to-thought')
-  addLabelToThought(
+  @Post('batch-add-labels')
+  batchAddLabels(
     @Req() req: Request,
-    @Body() body: { thoughtId: string; labelId: string; projectId: string },
+    @Body() body: { projectId: string; assignments: { thoughtId: string; labelId: string }[] },
   ) {
     const userId = this.userIdFromHeaders(req);
-    return this.relationshipsService.create(
+    return this.relationshipsService.createBatch(
       userId,
-      { projectId: body.projectId, sourceId: body.thoughtId, targetId: body.labelId, kind: 'tag' },
+      body.projectId,
+      body.assignments.map((a) => ({ sourceId: a.thoughtId, targetId: a.labelId, kind: 'tag' as const })),
       'mcp',
     );
   }
@@ -369,33 +370,31 @@ export class InternalMcpController {
     ).filter(Boolean);
   }
 
-  @Post('create-relationship')
-  async createRelationship(
+  @Post('batch-create-relationships')
+  async batchCreateRelationships(
     @Req() req: Request,
-    @Body() body: { projectId: string; sourceId: string; targetId: string; labelId: string },
+    @Body()
+    body: { projectId: string; relationships: { sourceId: string; targetId: string; labelId: string }[] },
   ) {
     const userId = this.userIdFromHeaders(req);
 
     // Mirror the web dialog's rule: explicit relationships carry an edge label
-    const label = await this.labelsService.findOne(userId, body.labelId);
-    if (label.projectId !== body.projectId) {
-      throw new BadRequestException('Label belongs to a different project');
-    }
-    if (!label.isEdge) {
-      throw new BadRequestException(
-        'labelId must reference an edge label (isEdge = true); promote it with set-label-edge first',
-      );
+    for (const labelId of new Set(body.relationships.map((r) => r.labelId))) {
+      const label = await this.labelsService.findOne(userId, labelId);
+      if (label.projectId !== body.projectId) {
+        throw new BadRequestException(`Label ${labelId} belongs to a different project`);
+      }
+      if (!label.isEdge) {
+        throw new BadRequestException(
+          `Label ${labelId} must be an edge label (isEdge = true); promote it with set-label-edge first`,
+        );
+      }
     }
 
-    return this.relationshipsService.create(
+    return this.relationshipsService.createBatch(
       userId,
-      {
-        projectId: body.projectId,
-        sourceId: body.sourceId,
-        targetId: body.targetId,
-        kind: 'edge',
-        labelId: body.labelId,
-      },
+      body.projectId,
+      body.relationships.map((r) => ({ ...r, kind: 'edge' as const })),
       'mcp',
     );
   }

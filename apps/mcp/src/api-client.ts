@@ -64,12 +64,15 @@ export class ApiClient {
     return this.post('list-thoughts', { userId, scope }, params);
   }
 
-  createThought(
+  createThoughts(
     userId: string,
-    params: { body: string; title?: string; projectId: string; parentId?: string },
+    params: {
+      projectId: string;
+      thoughts: { ref?: string; body: string; title?: string; parentRef?: string; parentId?: string }[];
+    },
     scope?: string,
   ) {
-    return this.post('create-thought', { userId, scope }, params);
+    return this.post('batch-create-thoughts', { userId, scope }, params);
   }
 
   editThought(userId: string, params: { thoughtId: string; body: string }, scope?: string) {
@@ -116,12 +119,12 @@ export class ApiClient {
     return this.post('remove-label', { userId, scope }, { labelId });
   }
 
-  addLabelToThought(
+  addLabelsToThoughts(
     userId: string,
-    params: { thoughtId: string; labelId: string; projectId: string },
+    params: { projectId: string; assignments: { thoughtId: string; labelId: string }[] },
     scope?: string,
   ) {
-    return this.post('add-label-to-thought', { userId, scope }, params);
+    return this.post('batch-add-labels', { userId, scope }, params);
   }
 
   removeLabelFromThought(
@@ -140,12 +143,15 @@ export class ApiClient {
     return this.post('set-label-edge', { userId, scope }, { labelId, isEdge });
   }
 
-  createRelationship(
+  createRelationships(
     userId: string,
-    params: { projectId: string; sourceId: string; targetId: string; labelId: string },
+    params: {
+      projectId: string;
+      relationships: { sourceId: string; targetId: string; labelId: string }[];
+    },
     scope?: string,
   ) {
-    return this.post('create-relationship', { userId, scope }, params);
+    return this.post('batch-create-relationships', { userId, scope }, params);
   }
 
   removeRelationship(userId: string, relationshipId: string, scope?: string) {

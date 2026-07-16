@@ -34,9 +34,12 @@ export function createListThoughtsTool(deps: ListThoughtsDeps): ToolDefinition {
 }
 
 export interface CreateThoughtDeps {
-  createThought: (
+  createThoughts: (
     userId: string,
-    params: { body: string; title?: string; projectId: string; parentId?: string },
+    params: {
+      projectId: string;
+      thoughts: { ref?: string; body: string; title?: string; parentRef?: string; parentId?: string }[];
+    },
     scope?: string,
   ) => Promise<ApiResult>;
 }
@@ -45,15 +48,25 @@ export function createCreateThoughtTool(deps: CreateThoughtDeps): ToolDefinition
   return defineTool({
     name: 'create_thought',
     description:
-      'Create a new thought in a project. Pass parentId to nest it as a sub-thought of an ' +
-      'existing thought in the same project.',
+      'Create one or more thoughts in a project as a single all-or-nothing batch. ' +
+      'Nest a thought under an existing one with parentId, or under another thought in the ' +
+      'same batch by giving that thought a short ref and pointing parentRef at it. Refs ' +
+      'never persist; the response echoes each ref beside the real id it became.',
     schema: z.object({
-      body: z.string().min(1),
-      title: z.string().optional(),
       projectId: z.string().uuid(),
-      parentId: z.string().uuid().optional(),
+      thoughts: z
+        .array(
+          z.object({
+            ref: z.string().min(1).optional(),
+            body: z.string().min(1),
+            title: z.string().optional(),
+            parentRef: z.string().min(1).optional(),
+            parentId: z.string().uuid().optional(),
+          }),
+        )
+        .min(1),
     }),
-    execute: (ctx, args) => deps.createThought(ctx.userId, args, ctx.scope),
+    execute: (ctx, args) => deps.createThoughts(ctx.userId, args, ctx.scope),
   });
 }
 

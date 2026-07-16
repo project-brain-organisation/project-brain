@@ -127,51 +127,73 @@ describe('list_thoughts tool', () => {
 });
 
 describe('create_thought tool', () => {
-  it('parses and executes', async () => {
-    let captured: { body?: string; projectId?: string } = {};
+  type CreateThoughtsParams = Parameters<
+    Parameters<typeof createCreateThoughtTool>[0]['createThoughts']
+  >[1];
+
+  it('parses a batch and executes', async () => {
+    let captured: CreateThoughtsParams | undefined;
     const tool = createCreateThoughtTool({
-      createThought: async (_userId, params) => {
+      createThoughts: async (_userId, params) => {
         captured = params;
         return okResult;
       },
     });
 
-    const args = tool.parseArguments({ body: 'Some thought', title: 'T', projectId: uuidA });
+    const args = tool.parseArguments({
+      projectId: uuidA,
+      thoughts: [{ body: 'Some thought', title: 'T' }],
+    });
     await tool.execute({ userId: 'u1' }, args);
 
     assert.equal(tool.name, 'create_thought');
-    assert.equal(captured.body, 'Some thought');
-    assert.equal(captured.projectId, uuidA);
+    assert.equal(captured?.projectId, uuidA);
+    assert.equal(captured?.thoughts[0]?.body, 'Some thought');
   });
 
-  it('forwards parentId for sub-thoughts', async () => {
-    let captured: { parentId?: string } = {};
+  it('forwards parentId and in-batch ref/parentRef', async () => {
+    let captured: CreateThoughtsParams | undefined;
     const tool = createCreateThoughtTool({
-      createThought: async (_userId, params) => {
+      createThoughts: async (_userId, params) => {
         captured = params;
         return okResult;
       },
     });
 
-    const args = tool.parseArguments({ body: 'Child', projectId: uuidA, parentId: uuidB });
+    const args = tool.parseArguments({
+      projectId: uuidA,
+      thoughts: [
+        { ref: 'root', body: 'Parent', parentId: uuidB },
+        { body: 'Child', parentRef: 'root' },
+      ],
+    });
     await tool.execute({ userId: 'u1' }, args);
 
-    assert.equal(captured.parentId, uuidB);
+    assert.equal(captured?.thoughts[0]?.parentId, uuidB);
+    assert.equal(captured?.thoughts[0]?.ref, 'root');
+    assert.equal(captured?.thoughts[1]?.parentRef, 'root');
   });
 
   it('rejects a non-uuid parentId', () => {
-    const tool = createCreateThoughtTool({ createThought: async () => okResult });
-    assert.throws(() => tool.parseArguments({ body: 'x', projectId: uuidA, parentId: 'nope' }));
+    const tool = createCreateThoughtTool({ createThoughts: async () => okResult });
+    assert.throws(() =>
+      tool.parseArguments({ projectId: uuidA, thoughts: [{ body: 'x', parentId: 'nope' }] }),
+    );
   });
 
-  it('rejects missing body', () => {
-    const tool = createCreateThoughtTool({ createThought: async () => okResult });
-    assert.throws(() => tool.parseArguments({ title: 'x', projectId: uuidA }));
+  it('rejects a thought without a body', () => {
+    const tool = createCreateThoughtTool({ createThoughts: async () => okResult });
+    assert.throws(() => tool.parseArguments({ projectId: uuidA, thoughts: [{ title: 'x' }] }));
+  });
+
+  it('rejects an empty batch', () => {
+    const tool = createCreateThoughtTool({ createThoughts: async () => okResult });
+    assert.throws(() => tool.parseArguments({ projectId: uuidA, thoughts: [] }));
   });
 
   it('rejects missing projectId', () => {
-    const tool = createCreateThoughtTool({ createThought: async () => okResult });
-    assert.throws(() => tool.parseArguments({ body: 'thought' }));
+    const tool = createCreateThoughtTool({ createThoughts: async () => okResult });
+    assert.throws(() => tool.parseArguments({ thoughts: [{ body: 'thought' }] }));
   });
 });
 
@@ -320,32 +342,46 @@ describe('remove_label tool', () => {
 });
 
 describe('add_label_to_thought tool', () => {
-  it('parses and executes', async () => {
-    let captured: { thoughtId?: string; labelId?: string; projectId?: string } = {};
+  it('parses a batch of assignments and executes', async () => {
+    let captured:
+      | { projectId: string; assignments: { thoughtId: string; labelId: string }[] }
+      | undefined;
     const tool = createAddLabelToThoughtTool({
-      addLabelToThought: async (_userId, params) => {
+      addLabelsToThoughts: async (_userId, params) => {
         captured = params;
         return okResult;
       },
     });
 
-    const args = tool.parseArguments({ thoughtId: uuidA, labelId: uuidB, projectId: uuidA });
+    const args = tool.parseArguments({
+      projectId: uuidA,
+      assignments: [{ thoughtId: uuidA, labelId: uuidB }],
+    });
     await tool.execute({ userId: 'u1' }, args);
 
     assert.equal(tool.name, 'add_label_to_thought');
-    assert.equal(captured.thoughtId, uuidA);
-    assert.equal(captured.labelId, uuidB);
-    assert.equal(captured.projectId, uuidA);
+    assert.equal(captured?.projectId, uuidA);
+    assert.equal(captured?.assignments[0]?.thoughtId, uuidA);
+    assert.equal(captured?.assignments[0]?.labelId, uuidB);
   });
 
   it('rejects missing projectId', () => {
-    const tool = createAddLabelToThoughtTool({ addLabelToThought: async () => okResult });
-    assert.throws(() => tool.parseArguments({ thoughtId: uuidA, labelId: uuidB }));
+    const tool = createAddLabelToThoughtTool({ addLabelsToThoughts: async () => okResult });
+    assert.throws(() =>
+      tool.parseArguments({ assignments: [{ thoughtId: uuidA, labelId: uuidB }] }),
+    );
+  });
+
+  it('rejects an empty batch', () => {
+    const tool = createAddLabelToThoughtTool({ addLabelsToThoughts: async () => okResult });
+    assert.throws(() => tool.parseArguments({ projectId: uuidA, assignments: [] }));
   });
 
   it('rejects invalid ids', () => {
-    const tool = createAddLabelToThoughtTool({ addLabelToThought: async () => okResult });
-    assert.throws(() => tool.parseArguments({ thoughtId: 'bad', labelId: uuidB, projectId: uuidA }));
+    const tool = createAddLabelToThoughtTool({ addLabelsToThoughts: async () => okResult });
+    assert.throws(() =>
+      tool.parseArguments({ projectId: uuidA, assignments: [{ thoughtId: 'bad', labelId: uuidB }] }),
+    );
   });
 });
 

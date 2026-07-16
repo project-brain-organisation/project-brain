@@ -125,12 +125,13 @@ describe('WorkspacePipelineService', () => {
 
         const service = new PipelineService(dbService, embedding, chunking);
 
-        await service.chunkAndEmbed(projectId, thoughtId, body, ownerId);
+        await service.chunkAndEmbed(projectId, [{ thoughtId, body }], ownerId);
 
-        // One inserted row per chunk
+        // One inserted row per chunk, each carrying its vector (batch shape:
+        // chunks land WITH embeddings in a single insert, no update pass).
         expect(insertValues).toHaveLength(expectedChunks.length);
         for (const row of insertValues) {
-          expect(row).toMatchObject({ projectId, thoughtId });
+          expect(row).toMatchObject({ projectId, thoughtId, vectorEmbedding: [0.1, 0.2] });
           // Persistence is project-scoped; no userId column (ownerId is the RLS param)
           expect(row).not.toHaveProperty('userId');
         }
@@ -182,19 +183,22 @@ describe('WorkspacePipelineService', () => {
       void tx; // suppress unused warning
     });
 
-    it('searches all of the user\'s projects when projectId is omitted (RLS scopes rows)', async () => {
+    it('searches only the user\'s OWNED chunks when projectId is omitted', async () => {
       const { dbService, asUser, executeSpy } = makePersistenceDb();
       const embedding = makeEmbeddingService([[0.5, 0.5]]);
       const service = new PipelineService(dbService, embedding, new ChunkingService());
 
       await service.semanticSearch('owner', undefined, 'find me');
 
-      // Runs under the user's tenant context; no project filter in the SQL.
+      // Runs under the user's tenant context with an explicit owner filter —
+      // without it the chunks_public_read policy would fold every public
+      // project on the platform into the search.
       expect(asUser).toHaveBeenCalledWith('owner', expect.any(Function));
       const sqlArg = executeSpy.mock.calls[0][0] as { queryChunks?: unknown[] };
-      const { text: sqlText } = flattenSql(sqlArg.queryChunks ?? []);
+      const { text: sqlText, values: boundValues } = flattenSql(sqlArg.queryChunks ?? []);
       expect(sqlText).not.toContain('project_id');
-      expect(sqlText).toContain('WHERE TRUE');
+      expect(sqlText).toContain('owner_id');
+      expect(boundValues).toContain('owner');
     });
   });
 });

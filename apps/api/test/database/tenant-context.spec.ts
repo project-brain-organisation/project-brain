@@ -178,7 +178,11 @@ describe('PipelineService — asUser wrapping (B4)', () => {
     const service = new PipelineService(dbService, embedding, chunking, makeProjectsService());
 
     const ownerId = 'owner-uuid-001';
-    await service.chunkAndEmbed('proj-1', 'thought-1', 'hello world pipeline', ownerId);
+    await service.chunkAndEmbed(
+      'proj-1',
+      [{ thoughtId: 'thought-1', body: 'hello world pipeline' }],
+      ownerId,
+    );
 
     expect(asUserSpy).toHaveBeenCalled();
     const calledOwnerIds = asUserSpy.mock.calls.map(([uid]: [string]) => uid);

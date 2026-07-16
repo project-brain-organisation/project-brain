@@ -15,57 +15,75 @@ const labelId = '550e8400-e29b-41d4-a716-446655440003';
 describe('create_relationship tool', () => {
   const mockRel = { id: 'rel-1', sourceId, targetId, kind: 'edge', labelId };
 
-  function makeTool(result: ApiResult = { ok: true, status: 201, data: mockRel }) {
+  function makeTool(result: ApiResult = { ok: true, status: 201, data: [mockRel] }) {
     return createCreateRelationshipTool({
-      createRelationship: async () => result,
+      createRelationships: async () => result,
     });
   }
 
   it('has correct metadata', () => {
     const tool = makeTool();
     assert.equal(tool.name, 'create_relationship');
-    for (const field of ['projectId', 'sourceId', 'targetId', 'labelId']) {
+    for (const field of ['projectId', 'relationships']) {
       assert.equal(tool.inputSchema.required?.includes(field), true);
     }
   });
 
-  it('parseArguments accepts a valid payload', () => {
+  it('parseArguments accepts a valid batch', () => {
     const tool = makeTool();
-    const result = tool.parseArguments({ projectId, sourceId, targetId, labelId }) as any;
-    assert.equal(result.sourceId, sourceId);
-    assert.equal(result.labelId, labelId);
+    const result = tool.parseArguments({
+      projectId,
+      relationships: [{ sourceId, targetId, labelId }],
+    }) as any;
+    assert.equal(result.relationships[0].sourceId, sourceId);
+    assert.equal(result.relationships[0].labelId, labelId);
   });
 
   it('parseArguments rejects missing labelId', () => {
     const tool = makeTool();
-    assert.throws(() => tool.parseArguments({ projectId, sourceId, targetId }));
+    assert.throws(() =>
+      tool.parseArguments({ projectId, relationships: [{ sourceId, targetId }] }),
+    );
   });
 
   it('parseArguments rejects non-uuid ids', () => {
     const tool = makeTool();
-    assert.throws(() => tool.parseArguments({ projectId, sourceId: 'nope', targetId, labelId }));
+    assert.throws(() =>
+      tool.parseArguments({ projectId, relationships: [{ sourceId: 'nope', targetId, labelId }] }),
+    );
+  });
+
+  it('parseArguments rejects an empty batch', () => {
+    const tool = makeTool();
+    assert.throws(() => tool.parseArguments({ projectId, relationships: [] }));
   });
 
   it('execute passes userId, args, scope to dep', async () => {
     let captured: { userId?: string; params?: unknown; scope?: string } = {};
     const tool = createCreateRelationshipTool({
-      createRelationship: async (userId, params, scope) => {
+      createRelationships: async (userId, params, scope) => {
         captured = { userId, params, scope };
-        return { ok: true, status: 201, data: {} };
+        return { ok: true, status: 201, data: [] };
       },
     });
 
-    const args = tool.parseArguments({ projectId, sourceId, targetId, labelId });
+    const args = tool.parseArguments({
+      projectId,
+      relationships: [{ sourceId, targetId, labelId }],
+    });
     await tool.execute({ userId: 'user-2', scope: 'proj-1' }, args);
 
     assert.equal(captured.userId, 'user-2');
     assert.equal(captured.scope, 'proj-1');
-    assert.deepEqual(captured.params, { projectId, sourceId, targetId, labelId });
+    assert.deepEqual(captured.params, {
+      projectId,
+      relationships: [{ sourceId, targetId, labelId }],
+    });
   });
 
   it('execute surfaces error results (e.g. duplicate 409)', async () => {
     const tool = makeTool({ ok: false, status: 409, error: 'Relationship already exists' });
-    const args = tool.parseArguments({ projectId, sourceId, targetId, labelId });
+    const args = tool.parseArguments({ projectId, relationships: [{ sourceId, targetId, labelId }] });
     const result = await tool.execute({ userId: 'u1' }, args);
     assert.equal(result.ok, false);
     assert.equal((result as any).status, 409);

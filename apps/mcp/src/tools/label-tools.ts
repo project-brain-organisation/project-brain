@@ -73,9 +73,9 @@ export function createRemoveLabelTool(deps: RemoveLabelDeps): ToolDefinition {
 }
 
 export interface AddLabelToThoughtDeps {
-  addLabelToThought: (
+  addLabelsToThoughts: (
     userId: string,
-    params: { thoughtId: string; labelId: string; projectId: string },
+    params: { projectId: string; assignments: { thoughtId: string; labelId: string }[] },
     scope?: string,
   ) => Promise<ApiResult>;
 }
@@ -83,13 +83,16 @@ export interface AddLabelToThoughtDeps {
 export function createAddLabelToThoughtTool(deps: AddLabelToThoughtDeps): ToolDefinition {
   return defineTool({
     name: 'add_label_to_thought',
-    description: 'Assign a label to a thought',
+    description:
+      'Assign labels to thoughts — one or many thought/label pairs as a single ' +
+      'all-or-nothing batch.',
     schema: z.object({
-      thoughtId: z.string().uuid(),
-      labelId: z.string().uuid(),
       projectId: z.string().uuid(),
+      assignments: z
+        .array(z.object({ thoughtId: z.string().uuid(), labelId: z.string().uuid() }))
+        .min(1),
     }),
-    execute: (ctx, args) => deps.addLabelToThought(ctx.userId, args, ctx.scope),
+    execute: (ctx, args) => deps.addLabelsToThoughts(ctx.userId, args, ctx.scope),
   });
 }
 

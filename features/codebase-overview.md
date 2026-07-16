@@ -139,7 +139,10 @@ project-type FK and rejects writes to public projects you don't own).
   (cross-instance needs LISTEN/NOTIFY).
 - **internal/mcp** — [InternalMcpController](../apps/api/src/internal-mcp/internal-mcp.controller.ts): the
   flat endpoint surface the sidecar calls (list/create/edit thoughts, labels, remember, elaborate,
-  thought-to-prompt, etc.).
+  thought-to-prompt, etc.). Creation is **batch-shaped** (2026-07-16): `batch-create-thoughts` /
+  `batch-create-relationships` / `batch-add-labels` take arrays and run all-or-nothing in one
+  `asUser` transaction (clone()'s idMap/FK-order/500-row techniques); a thoughts batch can nest
+  items under each other via string `ref`/`parentRef`. One SSE event and one embed pass per batch.
 
 ### Validation
 
