@@ -1,29 +1,36 @@
 import { hierarchy, tree } from 'd3-hierarchy';
+import { forceSimulation, forceLink, forceManyBody, forceCollide } from 'd3-force-3d';
 
-/** Minimum world-unit gap between depth rings. */
-const MIN_RING = 34;
-/** Tidy trees give each subtree its own sector rather than packing the
- *  circle evenly, so rings need slack beyond the raw label demand. */
-const SECTOR_SLACK = 1.6;
+/** World-unit gap between depth rings in the seed layout. */
+const MIN_RING = 22;
+/** Slack over raw label demand when sizing seed rings — the force polish
+ *  resolves residual overlaps, so the seed can start tight. */
+const SECTOR_SLACK = 1.15;
+/** Synchronous polish ticks; enough for the seed to relax, cheap at our sizes. */
+const SETTLE_TICKS = 120;
 
-export interface RadialNode {
+export interface LayoutNode {
   id: string;
   /** Half-width of the node's rendered footprint (circle or label), world units. */
   radius: number;
 }
 
-interface TreeDatum extends RadialNode {
+interface TreeDatum extends LayoutNode {
   children: TreeDatum[];
 }
 
 /**
- * Deterministic radial tidy-tree layout: root at the origin, each depth on a
- * concentric ring sized so its labels have room. The tree is a BFS spanning
- * tree from rootId — link order matters, so pass hierarchy links before
- * overlay edges. Unreachable nodes (shouldn't exist) hang off the root.
+ * Deterministic mind-map layout: a radial tidy-tree seed (root at the origin,
+ * depths on concentric rings) relaxed by a short offline force simulation —
+ * links pull related nodes together, label-footprint collision keeps text
+ * readable, so the result is organic and as dense as the labels allow. Both
+ * stages are deterministic, so the same graph always gets the same picture.
+ *
+ * The spanning tree is BFS from rootId — link order matters, so pass
+ * hierarchy links before overlay edges.
  */
-export function radialTreeLayout(
-  nodes: RadialNode[],
+export function mindMapLayout(
+  nodes: LayoutNode[],
   links: { source: string; target: string }[],
   rootId: string,
 ): Map<string, { x: number; y: number }> {
@@ -40,8 +47,8 @@ export function radialTreeLayout(
     if (list) list.push(b);
     else adjacency.set(a, [b]);
   };
-  for (const { source, target } of links) {
-    if (!byId.has(source) || !byId.has(target)) continue;
+  const presentLinks = links.filter((l) => byId.has(l.source) && byId.has(l.target));
+  for (const { source, target } of presentLinks) {
     link(source, target);
     link(target, source);
   }
@@ -71,7 +78,7 @@ export function radialTreeLayout(
     return positions;
   }
 
-  // Ring spacing: the busiest ring must fit its labels around its circumference.
+  // Seed ring spacing: the busiest ring should roughly fit its labels.
   const ringDemand = new Map<number, number>();
   for (const [id, depth] of depthOf) {
     if (depth === 0) continue;
@@ -88,15 +95,38 @@ export function radialTreeLayout(
   for (const node of byId.values()) if (node.children.length === 0) leaves++;
   const sweep = 2 * Math.PI * (1 - 1 / Math.max(leaves, 8));
 
-  const layout = tree<TreeDatum>()
+  const seed = tree<TreeDatum>()
     .size([sweep, ring * maxDepth])
     .separation((a, b) => (a.data.radius + b.data.radius || 1) / Math.max(a.depth, 1));
-  for (const point of layout(hierarchy(root, (d) => d.children)).descendants()) {
+  const seeded = new Map<string, { x: number; y: number }>();
+  for (const point of seed(hierarchy(root, (d) => d.children)).descendants()) {
     const angle = point.x - Math.PI / 2;
-    positions.set(point.data.id, {
+    seeded.set(point.data.id, {
       x: point.y * Math.cos(angle),
       y: point.y * Math.sin(angle),
     });
   }
+
+  // Offline polish: relax the seed into an organic, compact layout. The root
+  // stays pinned at the origin; collide (label footprints) is what ultimately
+  // guarantees readable, non-overlapping text.
+  const simNodes = nodes.map((n) => ({
+    ...n,
+    ...seeded.get(n.id)!,
+    ...(n.id === root.id ? { fx: 0, fy: 0 } : null),
+  }));
+  const simLinks = presentLinks.map((l) => ({ ...l }));
+  forceSimulation(simNodes, 2)
+    .force(
+      'link',
+      forceLink(simLinks)
+        .id((d: LayoutNode) => d.id)
+        .distance((l: any) => l.source.radius + l.target.radius),
+    )
+    .force('charge', forceManyBody().strength(-10))
+    .force('collide', forceCollide().radius((d: LayoutNode) => d.radius + 1).iterations(2))
+    .stop()
+    .tick(SETTLE_TICKS);
+  for (const node of simNodes) positions.set(node.id, { x: node.x, y: node.y });
   return positions;
 }

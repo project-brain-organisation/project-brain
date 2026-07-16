@@ -3,7 +3,7 @@ import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
 import { Group, Sprite, SpriteMaterial, CanvasTexture } from 'three';
 import type { Thought, EdgeRelationship } from '../hooks/useThoughts';
-import { radialTreeLayout } from '../lib/radialTreeLayout';
+import { mindMapLayout } from '../lib/mindMapLayout';
 import './NetworkView.css';
 
 const LABEL_HEIGHT = 2.5;
@@ -171,15 +171,16 @@ export function NetworkView({
       links = links.filter((l) => visible.has(l.source) && visible.has(l.target));
     }
 
-    // Deterministic radial tidy tree, rooted at the focused node when there is
-    // one. Pinning fx/fy/fz sidelines the force engine entirely: the graph
-    // renders settled on the first frame. Hierarchy links precede overlay
-    // edges in `links`, so the spanning tree follows the real hierarchy.
+    // Deterministic layout (radial-tree seed + offline force polish), rooted
+    // at the focused node when there is one. Computed before render and
+    // pinned, so the graph appears settled on the first frame and the live
+    // engine never runs. Hierarchy links precede overlay edges in `links`,
+    // so the spanning tree follows the real hierarchy.
     const rootId =
       focusedNodeId && idSet.has(focusedNodeId)
         ? focusedNodeId
         : (nodes.find((n) => n.isRoot) ?? nodes[0])?.id ?? '';
-    const positions = radialTreeLayout(
+    const positions = mindMapLayout(
       nodes.map((n) => ({ id: n.id, radius: nodeRadius(n) })),
       links,
       rootId,
