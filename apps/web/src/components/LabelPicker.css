@@ -97,7 +97,7 @@
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color 0.12s, box-shadow 0.12s, background-color 0.12s;
 }
 /* Title + colour dot + edge/remove buttons on one line */
 .lp-card-row {
@@ -109,9 +109,10 @@
   border-color: rgba(0, 0, 0, 0.16);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
+/* Already on the thought — reads as "done": warm fill + green check. */
 .lp-card--active {
   border-color: rgba(0, 0, 0, 0.18);
-  background: #fdfcfa;
+  background: #f7f3ea;
 }
 /* The None card has no second row — keep it a simple horizontal card */
 .lp-card--none {
@@ -120,10 +121,13 @@
   gap: 14px;
   border-style: dashed;
 }
-.lp-card--selected {
+/* Staged for Add — the :hover pair keeps this winning over .lp-card:hover,
+ * which otherwise outranks it on specificity and swallows the ring. */
+.lp-card--selected,
+.lp-card--selected:hover {
   border-color: #7b6bb5;
-  box-shadow: 0 0 0 2px rgba(123, 107, 181, 0.25);
-  background: #fdfcff;
+  box-shadow: 0 0 0 2px rgba(123, 107, 181, 0.5);
+  background: #f2edfb;
 }
 
 /* ─── Target picker (below the row, for the selected edge label) ── */
@@ -171,6 +175,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.lp-card-check {
+  font-size: 13px;
+  line-height: 1;
+  color: #4caf50;
+  flex-shrink: 0;
 }
 .lp-card--none .lp-card-name {
   color: var(--muted);
@@ -384,7 +394,11 @@
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  transition: opacity 0.1s;
+  transition: opacity 0.1s, background 0.12s;
+}
+/* A staged selection lights the button in the ring's accent — the next step. */
+.lp-add-primary:not(:disabled) {
+  background: #7b6bb5;
 }
 .lp-add-primary:hover {
   opacity: 0.85;

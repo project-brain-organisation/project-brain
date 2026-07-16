@@ -255,6 +255,7 @@ export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassi
                       title="Change colour"
                     />
                     <span className="lp-card-name">{label.name}</span>
+                    {isAssigned && <span className="lp-card-check" title="Already on this thought">✓</span>}
                     <button
                       className={`lp-edge-toggle ${label.isEdge ? 'lp-edge-toggle--on' : ''}`}
                       onClick={(e) => handleEdgeToggle(e, label.id, label.isEdge)}
