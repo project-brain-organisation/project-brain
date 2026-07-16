@@ -189,13 +189,29 @@ export function HomePage() {
 
   // Mind map shows the active node + visible thoughts. Top-level thoughts hang
   // off the project root, so substitute the project id for null parents.
+  // Drilled in, the focused node's relationship neighbours join its children —
+  // left with a null parent so they hang off the relationship edge alone.
   const networkThoughts = useMemo(() => {
     if (!activeNode) return [];
     const withParents = visibleThoughts.map((t) =>
       t.parentId ? t : { ...t, parentId: selectedRootId ?? null },
     );
-    return [activeNode, ...withParents];
-  }, [activeNode, visibleThoughts, selectedRootId]);
+    const nodes = [activeNode, ...withParents];
+    if (focusedNodeId) {
+      const present = new Set(nodes.map((t) => t.id));
+      for (const rel of edgeRelationships) {
+        const otherId =
+          rel.sourceId === focusedNodeId ? rel.targetId :
+          rel.targetId === focusedNodeId ? rel.sourceId : null;
+        if (!otherId || present.has(otherId)) continue;
+        const other = thoughts.find((t) => t.id === otherId);
+        if (!other) continue;
+        nodes.push({ ...other, parentId: null });
+        present.add(otherId);
+      }
+    }
+    return nodes;
+  }, [activeNode, visibleThoughts, selectedRootId, focusedNodeId, edgeRelationships, thoughts]);
 
   if (loading || projectsLoading) {
     return <div className="home-page-loading">Loading...</div>;
