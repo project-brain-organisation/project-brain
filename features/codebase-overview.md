@@ -205,7 +205,15 @@ React 19 SPA. Entry [main.tsx](../apps/web/src/main.tsx) → [App.tsx](../apps/w
   [useLabels](../apps/web/src/hooks/useLabels.ts) / `useThoughtLabels`, [useAuth](../apps/web/src/hooks/useAuth.ts).
 - **Live updates:** [useWorkspaceEvents](../apps/web/src/hooks/useWorkspaceEvents.ts) subscribes to the SSE
   stream and `invalidateQueries` the affected key when an `mcp`-sourced event arrives; own `user`
-  events are ignored (already patched optimistically). There are no ad-hoc event buses.
+  events are ignored (already patched optimistically). There are no ad-hoc event buses. On
+  `visibilitychange` back to visible, a dropped stream reconnects immediately (installed PWAs get
+  backgrounded aggressively).
+- **PWA (2026-07-16):** `vite-plugin-pwa` in [vite.config.ts](../apps/web/vite.config.ts) —
+  `registerType: 'autoUpdate'`, app-shell-only Workbox precache. `/api` is deliberately never
+  service-worker-cached (TanStack Query owns the data layer) and is denylisted from the SPA
+  navigation fallback along with `/.well-known`. Icons are rasterized from `public/favicon.svg`;
+  [OfflineBanner](../apps/web/src/components/OfflineBanner.tsx) shows a pill when offline.
+  `sql.js`/`public/sql-wasm.wasm` were removed as dead v1 leftovers.
 - **Components:** [HomePage](../apps/web/src/components/HomePage.tsx) is the main view (presents the project
   as a synthesized root pseudo-node, drill-down by focus), [NetworkView](../apps/web/src/components/NetworkView.tsx)
   (mind map rendered with `react-force-graph-3d`, but laid out deterministically before render by

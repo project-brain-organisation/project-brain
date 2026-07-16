@@ -27,6 +27,7 @@ export function useWorkspaceEvents() {
     const url = `${API_URL}/api/workspace/events`;
     let es: EventSource | null = null;
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
 
     function connect() {
       if (cancelled) return;
@@ -55,14 +56,26 @@ export function useWorkspaceEvents() {
 
         const delay = Math.min(1000 * 2 ** retryGate.current, 30_000);
         retryGate.current++;
-        setTimeout(connect, delay);
+        retryTimer = setTimeout(connect, delay);
       };
     }
+
+    // Installed/backgrounded apps lose the stream far more aggressively than
+    // a tab; on resume, skip whatever backoff is pending and reconnect now.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || es) return;
+      clearTimeout(retryTimer);
+      retryGate.current = 0;
+      connect();
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     connect();
 
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      clearTimeout(retryTimer);
       es?.close();
       es = null;
     };
