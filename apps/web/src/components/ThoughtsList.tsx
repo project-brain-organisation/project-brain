@@ -130,11 +130,11 @@ export function ThoughtsList({
   // Labels only apply to real thoughts — the project root pseudo-node is not
   // a taggable entity in the v2 model.
   const isProjectRoot = !!activeNode?.isRoot;
-  // At the mobile root the TopBar already shows the project name — drop the
-  // duplicate title here (rename lives on the TopBar title instead). Read-only
-  // roots also lose the colour dot, leaving nothing: drop the whole header.
+  // At the mobile root the TopBar already shows the project name (rename
+  // lives on the TopBar title) — the near-empty header row here was dead
+  // space, so it goes entirely; the graph handle strip took its place.
   const hideRootTitle = !!createFab && isProjectRoot;
-  const hideHeader = hideRootTitle && !!readOnly;
+  const hideHeader = hideRootTitle;
   const { thoughtLabels, edgeRelationships, assignLabel, unassignLabel, refresh } = useThoughtLabels(
     isProjectRoot ? undefined : activeNode?.id,
     activeNode?.projectId,

@@ -1,5 +1,18 @@
 # Mobile UI
 
+> **Superseded in part, 2026-07-17** (`features/mobile-graph-top-sheet.md`):
+> the bottom tab bar, the `/graph` screen, and the node-preview bottom sheet
+> (`ThoughtSheet`) are gone. Mobile is now a single Thoughts screen with a
+> **slide-down graph top sheet**: a slim "Graph" handle strip (where the old
+> empty second bar sat) opens the graph into the top ~46dvh, history-backed
+> (`'graph'` flag) so back closes it. Tapping a graph node drills the shared
+> drill path — list and graph filter together with the same
+> children-plus-relationship-neighbours rule as desktop focus; tapping the
+> root node (now focusable on desktop too) drills back to root. The
+> Relationships button sits top-right of the sheet; the FAB always creates a
+> thought. Sections below describe the pre-top-sheet design where they
+> mention tabs, the graph screen, or the node sheet.
+
 Adapt the workspace for phone-sized screens, following Material/iOS conventions
 throughout. Desktop keeps the current three-zone layout (sidebar / thoughts /
 graph); mobile replaces it with a top bar, bottom tab navigation, and two

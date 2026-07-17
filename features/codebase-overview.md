@@ -224,13 +224,16 @@ React 19 SPA. Entry [main.tsx](../apps/web/src/main.tsx) → [App.tsx](../apps/w
   [McpDialog](../apps/web/src/components/McpDialog.tsx), [Login](../apps/web/src/components/Login.tsx).
 - **Mobile (≤768px):** a separate single-screen layout, conditionally *mounted* via
   [useIsMobile](../apps/web/src/hooks/useIsMobile.ts) (never CSS-hidden — keeps the WebGL loop off).
-  Top bar + the Sidebar as a left nav drawer + a two-tab bottom bar routed at `/` (Thoughts, with a
-  new-thought FAB) and `/graph` (graph + node-preview bottom sheet with an anchored "Add relationship"
-  FAB). Dismissible surfaces (drawer / sheet / relationships dialog) live in router history state via
-  [useHistoryFlag](../apps/web/src/hooks/useHistoryFlag.ts) so the Android back gesture closes them.
-  The mobile **Thoughts** screen has its own drill-down — a history-backed `'drill'` path so a
-  back-swipe drills up one level (see `features/thought-canvas-drill-navigation.md`); desktop keeps
-  the in-memory `focusedNodeId` state. Details and rationale: `features/mobile-ui.md`.
+  Top bar + the Sidebar as a left nav drawer + one Thoughts screen (new-thought FAB) with a
+  **slide-down graph top sheet** (2026-07-17): a slim "Graph" handle strip opens the graph into the
+  top ~46dvh with the Relationships button top-right; the old two-tab bottom bar, `/graph` route and
+  node-preview bottom sheet are gone. Dismissible surfaces (drawer / graph sheet / relationships
+  dialog) live in router history state via [useHistoryFlag](../apps/web/src/hooks/useHistoryFlag.ts)
+  so the Android back gesture closes them. Filtering is the history-backed `'drill'` path (back-swipe
+  drills up a level, see `features/thought-canvas-drill-navigation.md`), shared by the list AND the
+  graph sheet — a graph node tap drills into it with the same children+relationship-neighbours rule
+  as desktop focus; desktop keeps in-memory `focusedNodeId` (the root is focusable there too).
+  Details and rationale: `features/mobile-ui.md`.
 
 ---
 

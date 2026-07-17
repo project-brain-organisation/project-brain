@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Shell } from './components/Shell';
 import { HomePage } from './components/HomePage';
 import { OfflineBanner } from './components/OfflineBanner';
@@ -12,8 +12,8 @@ export default function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route path="/" element={<HomePage />} />
-            {/* Mobile Graph tab; on desktop it renders the same two-pane view */}
-            <Route path="/graph" element={<HomePage />} />
+            {/* The old mobile Graph tab route — the graph is a top sheet now */}
+            <Route path="/graph" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

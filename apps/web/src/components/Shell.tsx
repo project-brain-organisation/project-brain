@@ -2,7 +2,6 @@ import { Outlet } from 'react-router-dom';
 import { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
-import { TabBar } from './TabBar';
 import { useAuth } from '../hooks/useAuth';
 import { useProjects } from '../hooks/useProjects';
 import { useWorkspaceEvents } from '../hooks/useWorkspaceEvents';
@@ -100,7 +99,6 @@ export function Shell() {
       <main className="shell-main">
         <Outlet />
       </main>
-      {isMobile && <TabBar />}
       <McpDialog open={mcpOpen} onClose={() => setMcpOpen(false)} />
       <DiscoverDialog
         open={discoverOpen}
