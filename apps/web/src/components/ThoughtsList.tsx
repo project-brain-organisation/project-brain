@@ -1,7 +1,8 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { Thought } from '../hooks/useThoughts';
-import { useThoughtLabels } from '../hooks/useLabels';
+import { useLabels, useThoughtLabels } from '../hooks/useLabels';
+import { useWorkspaceQuery } from '../hooks/query-utils';
 import { ThoughtCard } from './ThoughtCard';
 import { LabelPicker } from './LabelPicker';
 import { Fab } from './Fab';
@@ -60,6 +61,14 @@ function SearchIcon() {
   );
 }
 
+function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
 function HomeIcon() {
   return (
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -86,6 +95,9 @@ export function ThoughtsList({
 }: Props) {
   const [newThoughtId, setNewThoughtId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [labelFilter, setLabelFilter] = useState<ReadonlySet<string>>(new Set());
+  const [labelMenuOpen, setLabelMenuOpen] = useState(false);
+  const labelMenuRef = useRef<HTMLDivElement>(null);
   const [cloning, setCloning] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
@@ -121,6 +133,51 @@ export function ThoughtsList({
     document.addEventListener('mousedown', handleOutside);
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [colorPickerOpen]);
+
+  // ── Label filter: labels + tag relationships come from the snapshot ──
+  const projectId = activeNode?.projectId;
+  const { labels } = useLabels(projectId);
+  const snapshot = useWorkspaceQuery(projectId).data;
+
+  // Switching projects invalidates the selection (adjust-during-render
+  // pattern — an effect here would cascade a render).
+  const [filterProjectId, setFilterProjectId] = useState(projectId);
+  if (filterProjectId !== projectId) {
+    setFilterProjectId(projectId);
+    setLabelFilter(new Set());
+    setLabelMenuOpen(false);
+  }
+
+  useEffect(() => {
+    if (!labelMenuOpen) return;
+    function handleOutside(e: MouseEvent) {
+      if (labelMenuRef.current && !labelMenuRef.current.contains(e.target as Node)) {
+        setLabelMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [labelMenuOpen]);
+
+  // null = no label filter active; otherwise the ids of thoughts carrying ANY
+  // selected label (OR), which the text query then ANDs against.
+  const labelledThoughtIds = useMemo(() => {
+    if (!snapshot || labelFilter.size === 0) return null;
+    const ids = new Set<string>();
+    for (const rel of snapshot.relationships) {
+      if (rel.kind === 'tag' && labelFilter.has(rel.targetId)) ids.add(rel.sourceId);
+    }
+    return ids;
+  }, [snapshot, labelFilter]);
+
+  const toggleLabelFilter = useCallback((id: string) => {
+    setLabelFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   function openPicker(labelId?: string) {
     setEditingLabelId(labelId ?? null);
@@ -186,13 +243,14 @@ export function ThoughtsList({
   }, [onUpdateThought, newThoughtId]);
 
   const query = search.trim().toLowerCase();
-  const visibleThoughts = query
-    ? thoughts.filter(
-        (t) =>
-          t.title.toLowerCase().includes(query) ||
-          t.body.toLowerCase().includes(query),
-      )
-    : thoughts;
+  const visibleThoughts = thoughts.filter(
+    (t) =>
+      (!query ||
+        t.title.toLowerCase().includes(query) ||
+        t.body.toLowerCase().includes(query)) &&
+      (!labelledThoughtIds || labelledThoughtIds.has(t.id)),
+  );
+  const filtersActive = !!query || labelFilter.size > 0;
 
   return (
     <div className="thoughts-list">
@@ -392,6 +450,21 @@ export function ThoughtsList({
       {thoughts.length > 0 && (
         <div className="thoughts-list-search">
           <SearchIcon />
+          {[...labelFilter].map((id) => {
+            const label = labels.find((l) => l.id === id);
+            return label && (
+              <button
+                key={id}
+                className="thoughts-list-filter-chip"
+                style={{ borderColor: label.color, color: label.color }}
+                title="Remove this label filter"
+                onClick={() => toggleLabelFilter(id)}
+              >
+                <span className="thought-card-label-dot" style={{ background: label.color }} />
+                {label.name}
+              </button>
+            );
+          })}
           <input
             type="text"
             className="thoughts-list-search-input"
@@ -399,15 +472,46 @@ export function ThoughtsList({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          {search && (
+          {filtersActive && (
             <button
               className="thoughts-list-search-clear"
-              title="Clear search"
-              onClick={() => setSearch('')}
+              title="Clear search and filters"
+              onClick={() => {
+                setSearch('');
+                setLabelFilter(new Set());
+              }}
             >
               ×
             </button>
           )}
+          <div className="thoughts-list-filter" ref={labelMenuRef}>
+            <button
+              className={`thoughts-list-filter-toggle${labelMenuOpen ? ' thoughts-list-filter-toggle--open' : ''}`}
+              title="Filter by label"
+              onClick={() => setLabelMenuOpen(!labelMenuOpen)}
+            >
+              <ChevronDownIcon />
+            </button>
+            {labelMenuOpen && (
+              <div className="thoughts-list-filter-menu">
+                {labels.length === 0 ? (
+                  <div className="thoughts-list-filter-empty">No labels in this project yet.</div>
+                ) : (
+                  labels.map((l) => (
+                    <button
+                      key={l.id}
+                      className={`thoughts-list-filter-item${labelFilter.has(l.id) ? ' thoughts-list-filter-item--on' : ''}`}
+                      onClick={() => toggleLabelFilter(l.id)}
+                    >
+                      <span className="thought-card-label-dot" style={{ background: l.color }} />
+                      <span className="thoughts-list-filter-item-name">{l.name}</span>
+                      {labelFilter.has(l.id) && <span className="thoughts-list-filter-item-check">✓</span>}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -415,7 +519,11 @@ export function ThoughtsList({
         {thoughts.length === 0 ? (
           <div className="thoughts-list-empty">No thoughts yet. Create one to get started.</div>
         ) : visibleThoughts.length === 0 ? (
-          <div className="thoughts-list-empty">No thoughts match “{search.trim()}”.</div>
+          <div className="thoughts-list-empty">
+            {labelFilter.size > 0
+              ? 'No thoughts match the selected labels' + (query ? ` and “${search.trim()}”` : '') + '.'
+              : `No thoughts match “${search.trim()}”.`}
+          </div>
         ) : (
           visibleThoughts.map((thought) => (
             <ThoughtCard
