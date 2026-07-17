@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useThoughts, type Thought } from '../hooks/useThoughts';
+import { type Thought } from '../hooks/useThoughts';
 import { useThoughtLabels } from '../hooks/useLabels';
 import { LabelPicker } from './LabelPicker';
 import { ParentPicker } from './ParentPicker';
@@ -15,6 +15,11 @@ interface Props {
   autoFocusBody?: boolean;
   /** Subscribed public graph: render content but no editing affordances. */
   readOnly?: boolean;
+  /** Full project thoughts (not just the visible subset) — the drag cycle
+   *  guard must see the whole hierarchy. Passed down rather than subscribed
+   *  per-card: a hook here multiplies its cost by the number of cards. */
+  allThoughts?: Thought[];
+  onReparent?: (childId: string, parentId: string | null) => void;
 }
 
 /* Any inline editor currently focused, card or header. While one of these is
@@ -38,11 +43,8 @@ function formatTime(iso: string): string {
   return `${day} ${month} ${time}`;
 }
 
-export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocusBody, readOnly }: Props) {
+export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocusBody, readOnly, allThoughts, onReparent }: Props) {
   const { thoughtLabels, edgeRelationships, assignLabel, unassignLabel, refresh } = useThoughtLabels(thought.id, thought.projectId);
-  // Full project thoughts (not just the visible subset) — the drag cycle
-  // guard must see the whole hierarchy. setParent refuses cycles anyway.
-  const { thoughts: allThoughts, setParent } = useThoughts(thought.projectId);
   const [dropHover, setDropHover] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [parentPickerOpen, setParentPickerOpen] = useState(false);
@@ -137,16 +139,16 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
   // Touch devices never fire HTML5 drag events — the parent picker stays
   // the mobile path.
   const dragValidTarget = () =>
-    !readOnly && dragState.id !== null && !dragState.blocked.has(thought.id);
+    !readOnly && !!onReparent && dragState.id !== null && !dragState.blocked.has(thought.id);
 
   return (
     <div
       className={`thought-card${dropHover ? ' thought-card--drop' : ''}`}
       ref={rootRef}
-      draggable={!readOnly && !thought.isRoot && !editing}
+      draggable={!readOnly && !thought.isRoot && !editing && !!onReparent}
       onDragStart={(e) => {
         dragState.id = thought.id;
-        dragState.blocked = selfAndDescendants(allThoughts, thought.id);
+        dragState.blocked = selfAndDescendants(allThoughts ?? [], thought.id);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', thought.id);
       }}
@@ -163,7 +165,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
       onDrop={(e) => {
         e.preventDefault();
         setDropHover(false);
-        if (dragValidTarget()) setParent(dragState.id!, thought.isRoot ? null : thought.id);
+        if (dragValidTarget()) onReparent!(dragState.id!, thought.isRoot ? null : thought.id);
         dragState.id = null;
       }}
     >

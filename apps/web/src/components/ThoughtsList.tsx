@@ -33,6 +33,9 @@ interface Props {
   /** When set and viewing the project root, show a "clone this graph" button
    *  next to the project name (works on own and read-only graphs alike). */
   onClone?: () => Promise<void>;
+  /** Full project thoughts + reparent, threaded to cards for drag-to-reparent. */
+  allThoughts?: Thought[];
+  onReparent?: (childId: string, parentId: string | null) => void;
 }
 
 function CloneIcon() {
@@ -92,6 +95,8 @@ export function ThoughtsList({
   createFab,
   readOnly,
   onClone,
+  allThoughts,
+  onReparent,
 }: Props) {
   const [newThoughtId, setNewThoughtId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -539,6 +544,8 @@ export function ThoughtsList({
               onNavigate={onNavigateToNode}
               autoFocusBody={thought.id === newThoughtId}
               readOnly={readOnly}
+              allThoughts={allThoughts}
+              onReparent={onReparent}
             />
           ))
         )}

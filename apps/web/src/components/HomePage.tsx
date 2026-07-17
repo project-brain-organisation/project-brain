@@ -40,7 +40,7 @@ export function HomePage() {
   const { projects, loading: projectsLoading, createProject, cloneProject, renameProject, setProjectColor } = useProjects();
   const {
     thoughts, edgeRelationships, loading, createThought, updateThought, setThoughtColor,
-    removeThought, createEdgeRelationship, removeEdgeRelationship,
+    setParent, removeThought, createEdgeRelationship, removeEdgeRelationship,
   } = useThoughts(selectedRootId);
   const [creating, setCreating] = useState(false);
   const [projectName, setProjectName] = useState('');
@@ -54,6 +54,61 @@ export function HomePage() {
   const isMobile = useIsMobile();
   const [graphOpen, openGraph, closeGraph] = useHistoryFlag('graph');
   const [relOpen, openRel, closeRel] = useHistoryFlag('rel');
+
+  // The sheet's drag handle: pointer-drag resizes the sheet directly (inline
+  // flex-basis, transition off), release snaps open/closed; a no-move release
+  // is a tap and toggles. State only marks "dragging" — height stays in the
+  // DOM so moves never re-render React.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const sheetDrag = useRef<{ startY: number; startH: number; moved: boolean } | null>(null);
+  const [sheetDragging, setSheetDragging] = useState(false);
+  const graphEverOpened = useRef(false);
+  const sheetMax = () => window.innerHeight * 0.46;
+
+  const handleSheetDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    sheetDrag.current = {
+      startY: e.clientY,
+      startH: sheetRef.current?.getBoundingClientRect().height ?? 0,
+      moved: false,
+    };
+    setSheetDragging(true); // unpauses the graph so the reveal isn't blank
+  }, []);
+
+  const handleSheetMove = useCallback((e: React.PointerEvent) => {
+    const drag = sheetDrag.current;
+    const sheet = sheetRef.current;
+    if (!drag || !sheet) return;
+    const dy = e.clientY - drag.startY;
+    if (Math.abs(dy) > 6) drag.moved = true;
+    sheet.style.flexBasis = `${Math.min(Math.max(drag.startH + dy, 0), sheetMax())}px`;
+  }, []);
+
+  const handleSheetUp = useCallback(() => {
+    const drag = sheetDrag.current;
+    const sheet = sheetRef.current;
+    sheetDrag.current = null;
+    setSheetDragging(false);
+    if (!drag || !sheet) return;
+    if (!drag.moved) {
+      if (graphOpen) closeGraph();
+      else openGraph();
+      return;
+    }
+    const shouldOpen = sheet.getBoundingClientRect().height > sheetMax() / 2;
+    if (shouldOpen && !graphOpen) openGraph();
+    else if (!shouldOpen && graphOpen) closeGraph();
+  }, [graphOpen, openGraph, closeGraph]);
+
+  // After a drag settles (same batch as the open/close flag flip), hand the
+  // height back to CSS on the next frame so the transition animates from the
+  // dragged position to the snapped state.
+  useEffect(() => {
+    if (sheetDragging || !sheetRef.current) return;
+    const sheet = sheetRef.current;
+    const raf = requestAnimationFrame(() => { sheet.style.flexBasis = ''; });
+    return () => cancelAnimationFrame(raf);
+  }, [sheetDragging, graphOpen]);
 
   // Mobile Thoughts screen drill-down. Stored as a history stack so the OS/browser
   // back gesture pops one level (drill up); the focused node is the tail. Kept
@@ -326,10 +381,21 @@ export function HomePage() {
         ]
       : [];
 
+    // Latch-mount the graph on first interaction, then keep it mounted and
+    // merely paused when the sheet is shut. Reopening is then instant — the
+    // WebGL context and computed layout survive — instead of paying a fresh
+    // init (the ~1s sluggish open). Rendering resumes while dragging so the
+    // reveal is never a blank pane.
+    if (graphOpen || sheetDragging) graphEverOpened.current = true;
+    const mountGraph = graphOpen || sheetDragging || graphEverOpened.current;
+
     return (
       <div className="home-page home-page--mobile">
-        <div className={`mobile-graph-sheet${graphOpen ? ' mobile-graph-sheet--open' : ''}`}>
-          {graphOpen && (
+        <div
+          ref={sheetRef}
+          className={`mobile-graph-sheet${graphOpen ? ' mobile-graph-sheet--open' : ''}${sheetDragging ? ' mobile-graph-sheet--dragging' : ''}`}
+        >
+          {mountGraph && (
             <div className="mobile-graph-sheet-inner">
               <NetworkView
                 thoughts={graphThoughts}
@@ -338,6 +404,7 @@ export function HomePage() {
                 onResetView={drillToRoot}
                 edgeRels={edgeRelationships}
                 focusedNodeId={drilled ? drillId : undefined}
+                paused={!graphOpen && !sheetDragging}
               />
               {!readOnly && (
                 <div className="network-controls">
@@ -351,17 +418,14 @@ export function HomePage() {
         </div>
         <button
           className="mobile-graph-handle"
-          onClick={() => (graphOpen ? closeGraph() : openGraph())}
+          onPointerDown={handleSheetDown}
+          onPointerMove={handleSheetMove}
+          onPointerUp={handleSheetUp}
+          onPointerCancel={handleSheetUp}
           aria-expanded={!!graphOpen}
+          aria-label={graphOpen ? 'Close graph' : 'Open graph'}
         >
-          <svg
-            className="mobile-graph-handle-chevron"
-            viewBox="0 0 24 24" width="14" height="14"
-            fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-          >
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-          <span>Graph</span>
+          <span className="mobile-graph-handle-grip" />
         </button>
         <div className="mobile-screen">
           <ThoughtsList
@@ -383,6 +447,8 @@ export function HomePage() {
             onNavigateToRoot={drilled ? drillToRoot : undefined}
             createFab
             readOnly={readOnly}
+            allThoughts={thoughts}
+            onReparent={setParent}
           />
         </div>
         <RelationshipsDialog
@@ -418,6 +484,8 @@ export function HomePage() {
           onNavigateToRoot={focusedNodeId ? handleResetView : undefined}
           onClone={handleCloneProject}
           readOnly={readOnly}
+          allThoughts={thoughts}
+          onReparent={setParent}
         />
       </div>
       <div className="home-page-network">

@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import SpriteText from 'three-spritetext';
-import { Group, Sprite, SpriteMaterial, CanvasTexture } from 'three';
+import { Group, Sprite, SpriteMaterial, CanvasTexture, Raycaster, Vector2 } from 'three';
 import type { Thought, EdgeRelationship } from '../hooks/useThoughts';
 import { mindMapLayout } from '../lib/mindMapLayout';
 import './NetworkView.css';
@@ -51,6 +51,9 @@ interface Props {
   /** Filter to this node plus its one-hop neighbours (parent, children,
    *  relationship neighbours). */
   focusedNodeId?: string;
+  /** Halt the render loop (hidden mobile sheet) without unmounting, so
+   *  reopening is instant — no WebGL re-init, no layout recompute. */
+  paused?: boolean;
 }
 
 interface GraphNode {
@@ -91,9 +94,11 @@ export function NetworkView({
   onResetView,
   edgeRels = [],
   focusedNodeId,
+  paused,
 }: Props) {
   const [dimensions, setDimensions] = useState({ width: 400, height: 400 });
   const fgRef = useRef<any>(null);
+  const containerEl = useRef<HTMLDivElement | null>(null);
 
   const roRef = useRef<ResizeObserver | null>(null);
   const containerRef = useCallback((el: HTMLDivElement | null) => {
@@ -101,6 +106,7 @@ export function NetworkView({
       roRef.current.disconnect();
       roRef.current = null;
     }
+    containerEl.current = el;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
@@ -280,6 +286,55 @@ export function NetworkView({
     controls.maxDistance = Math.max(fitDistance() * 2.5, 300);
   }, [fitDistance]);
 
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    if (paused) fg.pauseAnimation();
+    else fg.resumeAnimation();
+  }, [paused]);
+
+  // Node selection via our own tap detection instead of force-graph's:
+  // its click handler bails on any >1px pointer movement (finger taps always
+  // wiggle) and resolves the target from a hover raycast done on animation
+  // frames (misses when a tap lands between frames). A pointerup within
+  // finger-sized tolerance plus a direct raycast is deterministic on both
+  // mouse and touch.
+  const tapRef = useRef<{ x: number; y: number; t: number; id: number } | null>(null);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    // A second concurrent pointer (pinch zoom) is never a tap.
+    tapRef.current = tapRef.current
+      ? null
+      : { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
+  }, []);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    const tap = tapRef.current;
+    tapRef.current = null;
+    if (!tap || tap.id !== e.pointerId) return;
+    if (Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 8 || Date.now() - tap.t > 500) return;
+    if ((e.target as HTMLElement).closest('button')) return;
+    const fg = fgRef.current;
+    const el = containerEl.current;
+    if (!fg || !el) return;
+    const rect = el.getBoundingClientRect();
+    const ndc = new Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const raycaster = new Raycaster();
+    raycaster.setFromCamera(ndc, fg.camera());
+    for (const hit of raycaster.intersectObjects(fg.scene().children, true)) {
+      let obj: any = hit.object;
+      while (obj && obj.__graphObjType === undefined) obj = obj.parent;
+      if (obj?.__graphObjType === 'node') {
+        onSelectNode?.(obj.__data.id);
+        return;
+      }
+    }
+    onResetView?.();
+  }, [onSelectNode, onResetView]);
+
   const nodeThreeObject = useCallback((node: GraphNode) => {
     const borderColor = nodeColors[node.id] || '#e8a838';
 
@@ -343,7 +398,13 @@ export function NetworkView({
   }
 
   return (
-    <div className="network-view" ref={containerRef}>
+    <div
+      className="network-view"
+      ref={containerRef}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={() => { tapRef.current = null; }}
+    >
       <ForceGraph3D
         ref={fgRef}
         width={dimensions.width}
@@ -352,9 +413,7 @@ export function NetworkView({
         cooldownTicks={0}
         graphData={graphData}
         nodeThreeObject={nodeThreeObject}
-        onNodeClick={(node: GraphNode) => onSelectNode?.(node.id)}
         linkHoverPrecision={4}
-        onBackgroundClick={() => onResetView?.()}
         nodeLabel={() => ''}
         linkLabel={(link: GraphLink) => {
           if (!link.labelName) return '';

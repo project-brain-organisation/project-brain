@@ -151,14 +151,16 @@
 }
 
 /* The top sheet: zero-height when closed, ~half the screen when open. The
- * graph mounts only while open (keeps the WebGL loop off otherwise); its
- * ResizeObserver + debounced refit ride the height transition. */
+ * graph stays mounted after first open (paused while shut) so reopening is
+ * instant; its ResizeObserver refits as the height animates. While the handle
+ * is being dragged the height is set inline and the transition is suppressed,
+ * so it tracks the finger 1:1. */
 .mobile-graph-sheet {
   position: relative;
   flex: 0 0 0px;
   min-height: 0;
   overflow: hidden;
-  transition: flex-basis 240ms cubic-bezier(0.2, 0, 0, 1);
+  transition: flex-basis 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .mobile-graph-sheet--open {
@@ -166,37 +168,47 @@
   border-bottom: 1px solid var(--border);
 }
 
+.mobile-graph-sheet--dragging {
+  transition: none;
+}
+
 .mobile-graph-sheet-inner {
   position: absolute;
   inset: 0;
 }
 
-/* Slim grab-handle strip in the space the old second top bar occupied:
- * opens the sheet from the top of the screen, closes it when open. */
+/* Grab-handle strip in the space the old second top bar occupied. A drag
+ * resizes the sheet directly; a tap toggles it. The grip pill is the visual
+ * affordance; touch-action:none stops the browser stealing the vertical drag
+ * for page scroll. */
 .mobile-graph-handle {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 5px 0 7px;
+  padding: 8px 0 9px;
   border: none;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
 }
 
-.mobile-graph-handle-chevron {
-  transition: transform 200ms;
+.mobile-graph-handle:active {
+  cursor: grabbing;
 }
 
-.mobile-graph-handle[aria-expanded='true'] .mobile-graph-handle-chevron {
-  transform: rotate(180deg);
+.mobile-graph-handle-grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border2);
+  transition: background 150ms, width 150ms;
+}
+
+.mobile-graph-handle[aria-expanded='true'] .mobile-graph-handle-grip {
+  background: var(--muted);
+  width: 44px;
 }
 
 .mobile-screen {
