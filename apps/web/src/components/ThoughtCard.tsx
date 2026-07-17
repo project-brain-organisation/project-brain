@@ -132,24 +132,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
             </span>
           ) : null
         )}
-        {editing ? (
-          <button
-            className="thought-card-commit"
-            title="Done"
-            aria-label="Finish editing"
-            // preventDefault keeps the field focused through mousedown so blur
-            // doesn't commit-and-unmount this button before the click lands.
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              if (editingTitle) commitTitle();
-              if (editingBody) commitBody();
-            }}
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-          </button>
-        ) : hasActions && (
+        {!editing && hasActions && (
           <div className="thought-card-actions">
             {/* The root pseudo-node has no parent to set. */}
             {!readOnly && !thought.isRoot && (
@@ -211,6 +194,25 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
           {thought.body || (readOnly ? null : <span className="thought-card-placeholder">Click to add text...</span>)}
         </div>
         )
+      )}
+
+      {editing && (
+        <button
+          className="thought-card-commit"
+          title="Done"
+          aria-label="Finish editing"
+          // preventDefault keeps the field focused through mousedown so blur
+          // doesn't commit-and-unmount this button before the click lands.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (editingTitle) commitTitle();
+            if (editingBody) commitBody();
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        </button>
       )}
 
       {!thought.isRoot && (

@@ -320,7 +320,7 @@
 /* Reuses .thought-card-commit looks, but flows after the textarea. */
 .thoughts-list-body-commit {
   align-self: flex-end;
-  margin-top: 0; /* the header-row optical lift doesn't apply here */
+  margin-top: 0; /* the editwrap column gap already spaces it */
 }
 
 /* ─── Search ──────────────────────────────────────── */
@@ -496,9 +496,13 @@
 }
 
 /* Mobile: the FAB (56px + 16px inset) owns the bottom-right corner — pad the
- * list so the last card can scroll clear of it. */
+ * list so the last card can scroll clear of it, and hide it while a card is
+ * being edited so it can't cover the commit tick. */
 @media (max-width: 768px) {
   .thoughts-list-cards {
     padding-bottom: 88px;
+  }
+  .thoughts-list:has(.thought-card-tag--editing, .thought-card-text--editing) .thoughts-list-fab {
+    display: none;
   }
 }
