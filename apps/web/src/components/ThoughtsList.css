@@ -303,6 +303,14 @@
   border-color: var(--border2);
 }
 
+.thoughts-list-delete {
+  font-size: 16px;
+  line-height: 1;
+}
+.thoughts-list-delete:hover {
+  color: #c0392b;
+}
+
 /* ─── Header body edit: textarea + commit tick ────── */
 .thoughts-list-body-editwrap {
   display: flex;

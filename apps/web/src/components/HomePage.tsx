@@ -10,6 +10,8 @@ import { RelationshipsDialog } from './RelationshipsDialog';
 import { ThoughtsList } from './ThoughtsList';
 import { ThoughtSheet, type SheetState } from './ThoughtSheet';
 import { Fab } from './Fab';
+import { ConfirmDialog } from './ConfirmDialog';
+import { thoughtName } from '../lib/thoughtName';
 import './HomePage.css';
 
 const DEFAULT_NODE_COLOR = '#e8a838';
@@ -45,6 +47,7 @@ export function HomePage() {
   } = useThoughts(selectedRootId);
   const [creating, setCreating] = useState(false);
   const [projectName, setProjectName] = useState('');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   // focusedNodeId drills into a child node within the selected project
   const [focusedNodeId, setFocusedNodeId] = useState<string | undefined>(undefined);
   const [relDialogOpen, setRelDialogOpen] = useState(false);
@@ -177,6 +180,43 @@ export function HomePage() {
   const activeNode = activeNodeId === selectedRootId
     ? rootNode
     : thoughts.find((t) => t.id === activeNodeId);
+
+  // Every delete X funnels through this confirm. Children of a deleted node
+  // aren't deleted — they lose their hierarchy edge and float to the top
+  // level, so the dialog says that rather than threatening deletion.
+  const requestDelete = useCallback((id: string) => setPendingDeleteId(id), []);
+
+  const confirmDelete = useCallback(() => {
+    const id = pendingDeleteId;
+    if (!id) return;
+    setPendingDeleteId(null);
+    const target = thoughts.find((t) => t.id === id);
+    removeThought(id);
+    // Don't leave any view pointing at the dead id.
+    if (id === focusedNodeId) setFocusedNodeId(target?.parentId ?? undefined);
+    if (id === drillId) popDrill(1);
+    if (id === sheetNodeId) {
+      setSheetExpanded(false);
+      closeSheet();
+    }
+  }, [pendingDeleteId, thoughts, removeThought, focusedNodeId, drillId, popDrill, sheetNodeId, closeSheet]);
+
+  const pendingDelete = pendingDeleteId ? thoughts.find((t) => t.id === pendingDeleteId) : undefined;
+  const pendingChildCount = pendingDeleteId
+    ? thoughts.filter((t) => t.parentId === pendingDeleteId).length
+    : 0;
+  const confirmDialog = pendingDelete ? (
+    <ConfirmDialog
+      message={`Delete "${thoughtName(pendingDelete)}"?`}
+      detail={
+        pendingChildCount > 0
+          ? `${pendingChildCount} subthought${pendingChildCount === 1 ? '' : 's'} will move to the top level.`
+          : undefined
+      }
+      onConfirm={confirmDelete}
+      onCancel={() => setPendingDeleteId(null)}
+    />
+  ) : null;
 
   // A focused node's neighbourhood: direct children plus relationship
   // neighbours. Shared by the thought list and the graph so they always show
@@ -315,11 +355,7 @@ export function HomePage() {
                 openSheet(id);
               }}
               onUpdate={(id, data) => updateThought(id, data)}
-              onDelete={(id) => {
-                removeThought(id);
-                // Deleting a neighbour card keeps the sheet on the focused node
-                if (id === sheetNodeId) handleSheetState('closed');
-              }}
+              onDelete={requestDelete}
               readOnly={readOnly}
               fab={
                 readOnly ? undefined : (
@@ -352,7 +388,7 @@ export function HomePage() {
                 createThought(body, { title, parentId: drillTargetId })
               }
               onUpdateThought={handleUpdateThought}
-              onDeleteThought={removeThought}
+              onDeleteThought={requestDelete}
               onNavigateToNode={drillInto}
               onNavigateUp={drilled ? drillUp : undefined}
               onNavigateToRoot={drilled ? drillToRoot : undefined}
@@ -370,6 +406,7 @@ export function HomePage() {
           onAdd={createEdgeRelationship}
           onRemove={removeEdgeRelationship}
         />
+        {confirmDialog}
       </div>
     );
   }
@@ -387,7 +424,7 @@ export function HomePage() {
           onNodeBorderColorChange={handleColorChange}
           onCreateThought={handleCreateThought}
           onUpdateThought={handleUpdateThought}
-          onDeleteThought={removeThought}
+          onDeleteThought={requestDelete}
           onNavigateToNode={handleSelectNode}
           onNavigateUp={focusedNodeId ? handleNavigateUp : undefined}
           onNavigateToRoot={focusedNodeId ? handleResetView : undefined}
@@ -423,6 +460,7 @@ export function HomePage() {
           onRemove={removeEdgeRelationship}
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

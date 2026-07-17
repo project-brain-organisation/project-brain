@@ -262,6 +262,16 @@ export function ThoughtsList({
                 </button>
               </div>
             )}
+            {/* The project root is deleted from the sidebar, not here. */}
+            {!isProjectRoot && !readOnly && activeNode && (
+              <button
+                className="thoughts-list-nav thoughts-list-delete"
+                title="Delete this thought"
+                onClick={() => onDeleteThought(activeNode.id)}
+              >
+                ×
+              </button>
+            )}
             {isProjectRoot && onClone && (
               <button
                 className="thoughts-list-clone"
