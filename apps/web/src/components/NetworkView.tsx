@@ -236,7 +236,11 @@ export function NetworkView({
   // when the graph's identity changes — a different project root or focus —
   // which also re-arms auto-fit.
   const userNavigated = useRef(false);
-  const identity = focusedNodeId ?? thoughts.find((t) => t.isRoot)?.id ?? '';
+  // Refit key. When unfocused it tracks the root id (so a project switch
+  // refits) but PREFIXED, so it never collides with the focused-on-root case
+  // where focusedNodeId IS the root id — otherwise focusing the root reads as
+  // "no identity change" and never zooms to fit like other nodes do.
+  const identity = focusedNodeId ?? `root:${thoughts.find((t) => t.isRoot)?.id ?? ''}`;
   const prevIdentity = useRef<string | null>(null);
 
   // Refit when identity changes (project/focus) — animated — or when the

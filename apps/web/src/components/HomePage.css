@@ -150,11 +150,12 @@
   overflow: hidden;
 }
 
-/* The top sheet: zero-height when closed, ~half the screen when open. The
- * graph stays mounted after first open (paused while shut) so reopening is
- * instant; its ResizeObserver refits as the height animates. While the handle
- * is being dragged the height is set inline and the transition is suppressed,
- * so it tracks the finger 1:1. */
+/* The top sheet: zero-height when closed, ~half the screen when open. It clips
+ * (overflow:hidden) a fixed-height inner, so opening/closing is a pure height
+ * reveal — the graph canvas inside keeps a constant size and never re-renders
+ * or refits mid-animation (what made large graphs stutter). The graph stays
+ * mounted (paused while shut). While the handle is dragged the height is set
+ * inline and the transition suppressed, so it tracks the finger 1:1. */
 .mobile-graph-sheet {
   position: relative;
   flex: 0 0 0px;
@@ -172,9 +173,14 @@
   transition: none;
 }
 
+/* Fixed to the OPEN height and pinned to the top, so the sheet reveals it by
+ * clipping rather than resizing it. Must match --open's flex-basis. */
 .mobile-graph-sheet-inner {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 46dvh;
 }
 
 /* Grab-handle strip in the space the old second top bar occupied. A drag

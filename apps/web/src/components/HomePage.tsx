@@ -65,6 +65,22 @@ export function HomePage() {
   const graphEverOpened = useRef(false);
   const sheetMax = () => window.innerHeight * 0.46;
 
+  // Front-load the graph: mount it (paused, clipped to zero height) shortly
+  // after first paint so the WebGL init + layout is already done before the
+  // first drawer open — otherwise a large graph pays that cost mid-animation
+  // and the open stutters. Deferred to idle so it never blocks initial render.
+  const [preloadGraph, setPreloadGraph] = useState(false);
+  useEffect(() => {
+    const w = window as typeof window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const id = w.requestIdleCallback
+      ? w.requestIdleCallback(() => setPreloadGraph(true), { timeout: 2000 })
+      : window.setTimeout(() => setPreloadGraph(true), 500);
+    return () => (w.cancelIdleCallback ? w.cancelIdleCallback(id) : clearTimeout(id));
+  }, []);
+
   // The graph sheet and each in-graph drill are separate history entries, and a
   // drill lands on top of the open-graph entry. So closing via history-back
   // would pop the drill, not the sheet. Record the index from just before the
@@ -422,7 +438,7 @@ export function HomePage() {
     // init (the ~1s sluggish open). Rendering resumes while dragging so the
     // reveal is never a blank pane.
     if (graphOpen || sheetDragging) graphEverOpened.current = true;
-    const mountGraph = graphOpen || sheetDragging || graphEverOpened.current;
+    const mountGraph = graphOpen || sheetDragging || graphEverOpened.current || preloadGraph;
 
     return (
       <div className="home-page home-page--mobile">
