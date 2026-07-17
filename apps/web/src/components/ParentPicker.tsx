@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useThoughts, type Thought } from '../hooks/useThoughts';
 import { thoughtName } from '../lib/thoughtName';
+import { selfAndDescendants } from '../lib/descendants';
 import './ParentPicker.css';
 
 interface Props {
@@ -15,24 +16,10 @@ export function ParentPicker({ thought, onClose }: Props) {
   const { thoughts, setParent } = useThoughts(thought.projectId);
   const [search, setSearch] = useState('');
 
-  const blocked = useMemo(() => {
-    const childrenOf = new Map<string, string[]>();
-    for (const t of thoughts) {
-      if (!t.parentId) continue;
-      childrenOf.set(t.parentId, [...(childrenOf.get(t.parentId) ?? []), t.id]);
-    }
-    const set = new Set([thought.id]);
-    const queue = [thought.id];
-    while (queue.length) {
-      for (const kid of childrenOf.get(queue.pop()!) ?? []) {
-        if (!set.has(kid)) {
-          set.add(kid);
-          queue.push(kid);
-        }
-      }
-    }
-    return set;
-  }, [thoughts, thought.id]);
+  const blocked = useMemo(
+    () => selfAndDescendants(thoughts, thought.id),
+    [thoughts, thought.id],
+  );
 
   const query = search.trim().toLowerCase();
   const candidates = thoughts.filter(
@@ -46,14 +33,21 @@ export function ParentPicker({ thought, onClose }: Props) {
 
   return createPortal(
     <div className="pp-overlay" onClick={onClose}>
-      <div className="pp-box" role="dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="pp-title">Parent for “{thoughtName(thought)}”</div>
+      <div
+        className="pp-box"
+        role="dialog"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.key === 'Escape' && onClose()}
+      >
+        <div className="pp-header">
+          <div className="pp-title">Parent for “{thoughtName(thought)}”</div>
+          <button className="pp-close" onClick={onClose} aria-label="Close">&times;</button>
+        </div>
         <input
           className="pp-search"
           placeholder="Search thoughts…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => e.key === 'Escape' && onClose()}
           autoFocus
         />
         <div className="pp-list">

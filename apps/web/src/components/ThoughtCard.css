@@ -18,6 +18,12 @@
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* Valid drop target while another card is being dragged over it. */
+.thought-card--drop {
+  border-color: #7b6bb5;
+  box-shadow: 0 0 0 2px rgba(123, 107, 181, 0.5);
+}
 .thought-card:hover { border-color: rgba(180, 130, 60, 0.75); }
 
 /* ─── Action buttons (header row, in flow) ────────────

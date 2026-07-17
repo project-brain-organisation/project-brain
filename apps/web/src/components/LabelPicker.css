@@ -75,6 +75,11 @@
   gap: 8px;
 }
 
+/* Scrolling list: items must not compress when the list overflows. */
+.lp-list > * {
+  flex-shrink: 0;
+}
+
 /* ─── Card wrapper (positions swatch popover) ──────────── */
 .lp-card-wrap {
   position: relative;
