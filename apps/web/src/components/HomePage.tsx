@@ -112,30 +112,32 @@ export function HomePage() {
     const drag = sheetDrag.current;
     const sheet = sheetRef.current;
     sheetDrag.current = null;
-    setSheetDragging(false);
-    if (!drag || !sheet) return;
+    if (!drag || !sheet) { setSheetDragging(false); return; }
     if (!drag.moved) {
+      setSheetDragging(false);
       if (graphOpen) closeGraphSheet();
       else openGraphSheet();
       return;
     }
+    // Snap from the dragged height to the nearest end. Animate to an EXPLICIT
+    // target and hold that inline height until the transition ends, then hand
+    // control back to CSS. Clearing the inline height earlier (as a bare rAF
+    // did) let an intermediate render — flag flip vs. class swap out of sync —
+    // flash the sheet to 0 first: the jump up, then back down.
     const shouldOpen = sheet.getBoundingClientRect().height > sheetMax() / 2;
-    if (shouldOpen && !graphOpen) openGraphSheet();
-    else if (!shouldOpen && graphOpen) closeGraphSheet();
-  }, [graphOpen, openGraphSheet, closeGraphSheet]);
-
-  // After a drag settles (same batch as the open/close flag flip), restore the
-  // CSS transition and hand the height back to CSS on the next frame, so it
-  // animates from the dragged position to the snapped (open/closed) state.
-  useEffect(() => {
-    if (sheetDragging || !sheetRef.current) return;
-    const sheet = sheetRef.current;
-    const raf = requestAnimationFrame(() => {
+    sheet.style.transition = 'flex-basis 240ms cubic-bezier(0.22, 1, 0.36, 1)';
+    void sheet.offsetHeight; // commit the transition before changing the target
+    sheet.style.flexBasis = shouldOpen ? `${sheetMax()}px` : '0px';
+    const finishSnap = () => {
       sheet.style.transition = '';
       sheet.style.flexBasis = '';
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [sheetDragging, graphOpen]);
+    };
+    sheet.addEventListener('transitionend', finishSnap, { once: true });
+    window.setTimeout(finishSnap, 320); // fallback if no size change → no event
+    if (shouldOpen && !graphOpen) openGraphSheet();
+    else if (!shouldOpen && graphOpen) closeGraphSheet();
+    setSheetDragging(false);
+  }, [graphOpen, openGraphSheet, closeGraphSheet]);
 
   // Mobile Thoughts screen drill-down. Stored as a history stack so the OS/browser
   // back gesture pops one level (drill up); the focused node is the tail. Kept
@@ -144,11 +146,13 @@ export function HomePage() {
   const drillId = drillPath?.[drillPath.length - 1];
 
   const drillInto = useCallback((id: string) => {
-    if (!id || id === selectedRootId) return;
+    // The root is a valid focus target too: focusing it shows its direct
+    // children (top-level). Only the no-op re-tap is filtered.
+    if (!id) return;
     const path = drillPath ?? [];
     if (path[path.length - 1] === id) return;
     pushDrill([...path, id], { push: true });
-  }, [drillPath, selectedRootId, pushDrill]);
+  }, [drillPath, pushDrill]);
 
   const drillUp = useCallback(() => {
     if (drillPath?.length) popDrill(1);
@@ -393,9 +397,11 @@ export function HomePage() {
   if (isMobile) {
     // Focus: the drilled-into node (tail of the history path) or the root.
     // The graph top sheet and the list share it, so tapping a node in the
-    // graph filters both — the same neighbourhood rule as desktop focus.
+    // graph filters both — the same neighbourhood rule as desktop focus. The
+    // root counts as a focus target (its neighbourhood is the top-level
+    // thoughts); tapping empty graph space clears back to the full list.
     const drillNode = drillId ? thoughts.find((t) => t.id === drillId) ?? rootNode : rootNode;
-    const drilled = !!drillPath?.length && !!drillNode && !drillNode.isRoot;
+    const drilled = !!drillPath?.length && !!drillNode;
     const drillTargetId = (drilled && drillNode ? drillNode.id : selectedRootId) ?? undefined;
     const drillVisible = drilled && drillNode ? nodesAround(drillNode.id) : thoughts;
 
@@ -429,7 +435,7 @@ export function HomePage() {
               <NetworkView
                 thoughts={graphThoughts}
                 nodeColors={nodeColors}
-                onSelectNode={(id) => (id === selectedRootId ? drillToRoot() : drillInto(id))}
+                onSelectNode={(id) => drillInto(id)}
                 onResetView={drillToRoot}
                 edgeRels={edgeRelationships}
                 focusedNodeId={drilled ? drillId : undefined}

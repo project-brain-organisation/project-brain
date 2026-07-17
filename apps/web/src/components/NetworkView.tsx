@@ -418,6 +418,7 @@ export function NetworkView({
         height={dimensions.height}
         numDimensions={2}
         cooldownTicks={0}
+        enableNodeDrag={false}
         graphData={graphData}
         nodeThreeObject={nodeThreeObject}
         linkHoverPrecision={4}
