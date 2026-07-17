@@ -109,6 +109,12 @@ export class PipelineService {
       ? sql`c.project_id = ${projectId}`
       : sql`c.owner_id = ${userId}`;
 
+    // Recency-weighted ranking: score = similarity * (0.5 + 0.5 * exp(-age/tau)).
+    // A thought edited now keeps its full similarity; one untouched for tau
+    // (30 days) drops to ~68%, and ancient thoughts asymptote at half weight —
+    // recent notes win ties without old knowledge becoming unfindable.
+    const RECENCY_TAU_SECONDS = 30 * 24 * 3600;
+
     return this.db.asUser(userId, async (tx) => {
       const results = await tx.execute(sql`
         SELECT
@@ -117,12 +123,15 @@ export class PipelineService {
           c.body AS "body",
           t.title AS "thoughtTitle",
           t.body AS "thoughtBody",
-          1 - (c.vector_embedding <=> ${JSON.stringify(queryVector)}::vector) AS "score"
+          1 - (c.vector_embedding <=> ${JSON.stringify(queryVector)}::vector) AS "similarity",
+          (1 - (c.vector_embedding <=> ${JSON.stringify(queryVector)}::vector))
+            * (0.5 + 0.5 * exp(-extract(epoch from (now() - e.updated_at)) / ${RECENCY_TAU_SECONDS})) AS "score"
         FROM chunks c
         JOIN thoughts t ON t.id = c.thought_id
+        JOIN entities e ON e.id = c.thought_id
         WHERE ${projectFilter}
           AND c.vector_embedding IS NOT NULL
-        ORDER BY c.vector_embedding <=> ${JSON.stringify(queryVector)}::vector
+        ORDER BY "score" DESC
         LIMIT ${clampedN}
       `);
 

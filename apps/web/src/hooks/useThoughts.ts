@@ -183,9 +183,12 @@ export function useThoughts(projectId?: string) {
     projectId,
     'Update thought',
     ({ id, data }: { id: string; data: Partial<ApiThought> }) => thoughtsApi.update(id, data),
+    // Stamp updatedAt so the card time reflects the edit immediately; the
+    // snapshot refetch replaces it with the server's value.
     (snap, { id, data }) => ({
       ...snap,
-      thoughts: snap.thoughts.map((t) => (t.id === id ? { ...t, ...data } : t)),
+      thoughts: snap.thoughts.map((t) =>
+        t.id === id ? { ...t, ...data, updatedAt: new Date().toISOString() } : t),
     }),
   );
 

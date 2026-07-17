@@ -16,8 +16,7 @@ interface Props {
 }
 
 function formatTime(iso: string): string {
-  // v2 thoughts don't carry a creation timestamp (it lives on entities);
-  // render nothing rather than "Invalid Date".
+  // The root pseudo-node has no timestamp; render nothing, not "Invalid Date".
   if (!iso) return '';
   const d = new Date(iso);
   const day   = String(d.getDate()).padStart(2, '0');
@@ -124,7 +123,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
       </div>
       )}
       <div className="thought-card-top">
-        <span className="thought-card-time">{formatTime(thought.createdAt)}</span>
+        <span className="thought-card-time">{formatTime(thought.updatedAt)}</span>
         {editingTitle ? (
           <input
             ref={titleRef}

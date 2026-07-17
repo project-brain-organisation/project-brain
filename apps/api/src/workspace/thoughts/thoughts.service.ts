@@ -257,8 +257,11 @@ export class ThoughtsService {
     // doesn't silently no-op (0 rows) and leave callers thinking it worked.
     if (thought.ownerId !== userId) throw new ForbiddenException(READ_ONLY_GRAPH_MESSAGE);
 
-    const [updated] = await this.db.asUser(userId, async (tx) =>
-      tx
+    const [updated] = await this.db.asUser(userId, async (tx) => {
+      // Timestamps live on the entities supertype; without this bump
+      // updated_at would stay at creation time forever.
+      await tx.update(entities).set({ updatedAt: new Date() }).where(eq(entities.id, id));
+      return tx
         .update(thoughts)
         .set({
           ...(patch.body !== undefined && { body: patch.body }),
@@ -270,8 +273,8 @@ export class ThoughtsService {
           ...(patch.height !== undefined && { height: patch.height }),
         })
         .where(eq(thoughts.id, id))
-        .returning(),
-    );
+        .returning();
+    });
 
     // Re-chunk + re-embed only when the body text actually changed.
     if (patch.body !== undefined && patch.body !== thought.body) {
