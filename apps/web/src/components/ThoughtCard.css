@@ -28,6 +28,9 @@
   gap: 2px;
   margin-left: auto;
   flex-shrink: 0;
+  /* Optical top-alignment: the buttons centre their glyphs in a 20px box,
+   * so pull the box up until the glyph tops match the title's top. */
+  margin-top: -3px;
   opacity: 0;
   transition: opacity 0.12s;
 }
@@ -144,6 +147,7 @@
 .thought-card-commit {
   margin-left: auto;
   flex-shrink: 0;
+  margin-top: -4px;
   width: 24px;
   height: 24px;
   border: none;
@@ -161,12 +165,21 @@
   transform: scale(0.92);
 }
 
-/* ─── Labels row ────────────────────────────────────── */
+/* ─── Footer row ──────────────────────────────────────
+ * Labels wrap inside their own block; the time is a sibling pinned to the
+ * bottom-right, so many labels can never push it onto its own line. */
 .thought-card-labels {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.thought-card-label-wrap {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 5px;
-  margin-top: 8px;
   flex-wrap: wrap;
 }
 .thought-card-label {
@@ -260,6 +273,8 @@
    * the title (which shrinks and wraps beside them). */
   .thought-card-actions {
     opacity: 1;
+    /* 30px boxes centre their glyphs lower — lift further than desktop. */
+    margin-top: -6px;
   }
   .thought-card-action {
     width: 30px;
@@ -269,6 +284,7 @@
   .thought-card-commit {
     width: 30px;
     height: 30px;
+    margin-top: -6px;
   }
   .thought-card-label-add {
     width: 28px;

@@ -320,6 +320,7 @@
 /* Reuses .thought-card-commit looks, but flows after the textarea. */
 .thoughts-list-body-commit {
   align-self: flex-end;
+  margin-top: 0; /* the header-row optical lift doesn't apply here */
 }
 
 /* ─── Search ──────────────────────────────────────── */

@@ -215,6 +215,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
 
       {!thought.isRoot && (
       <div className="thought-card-labels">
+        <div className="thought-card-label-wrap">
         {thoughtLabels.map((tl) => (
           <button
             key={tl.id}
@@ -247,6 +248,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
           </span>
         ))}
         {!readOnly && <button className="thought-card-label-add" onClick={() => openPicker()}>+</button>}
+        </div>
         {formatTime(thought.updatedAt) && (
           <span className="thought-card-time">{formatTime(thought.updatedAt)}</span>
         )}
