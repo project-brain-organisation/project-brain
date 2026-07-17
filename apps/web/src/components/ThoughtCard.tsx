@@ -123,7 +123,6 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
       </div>
       )}
       <div className="thought-card-top">
-        <span className="thought-card-time">{formatTime(thought.updatedAt)}</span>
         {editingTitle ? (
           <input
             ref={titleRef}
@@ -150,6 +149,9 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
               Add title
             </span>
           ) : null
+        )}
+        {formatTime(thought.updatedAt) && (
+          <span className="thought-card-time">{formatTime(thought.updatedAt)}</span>
         )}
       </div>
 

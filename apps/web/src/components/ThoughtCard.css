@@ -71,6 +71,10 @@
   font-size: 9px;
   color: var(--muted);
   letter-spacing: 0.3px;
+  /* Title chip leads the row flush with the body text; time hugs the right.
+   * An empty time span used to occupy the first flex slot and its gap pushed
+   * every title 8px off the body's left edge. */
+  margin-left: auto;
 }
 .thought-card-tag {
   font-family: var(--font-mono);
