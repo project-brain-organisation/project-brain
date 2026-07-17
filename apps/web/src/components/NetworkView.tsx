@@ -207,25 +207,48 @@ export function NetworkView({
   // of zoomToFit's bounding-sphere guesswork. Instant on first render,
   // animated on later data/size changes.
   const firstFit = useRef(true);
+  const fitDistance = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg) return 0;
+    const halfW = Math.max((bbox.maxX - bbox.minX) / 2, 20) * 1.05;
+    const halfH = Math.max((bbox.maxY - bbox.minY) / 2, 20) * 1.05;
+    const aspect = dimensions.width / dimensions.height;
+    const halfFov = ((fg.camera().fov / 2) * Math.PI) / 180;
+    return Math.max(halfH, halfW / aspect) / Math.tan(halfFov);
+  }, [bbox, dimensions]);
+
   const fitGraph = useCallback(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    const halfW = Math.max((bbox.maxX - bbox.minX) / 2, 20) * 1.05;
-    const halfH = Math.max((bbox.maxY - bbox.minY) / 2, 20) * 1.05;
     const cx = (bbox.minX + bbox.maxX) / 2;
     const cy = (bbox.minY + bbox.maxY) / 2;
-    const aspect = dimensions.width / dimensions.height;
-    const halfFov = ((fg.camera().fov / 2) * Math.PI) / 180;
-    const dist = Math.max(halfH, halfW / aspect) / Math.tan(halfFov);
-    fg.cameraPosition({ x: cx, y: cy, z: dist }, { x: cx, y: cy, z: 0 }, firstFit.current ? 0 : 400);
+    fg.cameraPosition({ x: cx, y: cy, z: fitDistance() }, { x: cx, y: cy, z: 0 }, firstFit.current ? 0 : 400);
     firstFit.current = false;
-  }, [bbox, dimensions]);
+  }, [bbox, fitDistance]);
 
-  // Refit on data or container changes; the short debounce coalesces the
-  // mobile sheet's continuous resizes.
+  // Once the user has zoomed/panned, data ticks (SSE invalidations, edits,
+  // resizes) must not yank the camera back to full frame. Auto-refit only
+  // when the graph's identity changes — a different project root or focus —
+  // which also re-arms auto-fit.
+  const userNavigated = useRef(false);
+  const identity = focusedNodeId ?? thoughts.find((t) => t.isRoot)?.id ?? '';
+  const prevIdentity = useRef<string | null>(null);
+
+  // Refit on identity/data/container changes — unless the user has taken the
+  // camera. The short debounce coalesces the mobile sheet's continuous resizes.
   useEffect(() => {
+    if (prevIdentity.current !== identity) {
+      prevIdentity.current = identity;
+      userNavigated.current = false;
+    }
+    if (userNavigated.current) return;
     const timer = setTimeout(fitGraph, 50);
     return () => clearTimeout(timer);
+  }, [identity, fitGraph]);
+
+  const handleRecentre = useCallback(() => {
+    userNavigated.current = false;
+    fitGraph();
   }, [fitGraph]);
 
   // Force node object re-creation when colors change
@@ -236,13 +259,26 @@ export function NetworkView({
 
   // Disable camera rotation on drag — pan/zoom only, layout is a flat plane.
   // Covers both control flavours: TrackballControls (noRotate) and
-  // OrbitControls (enableRotate).
+  // OrbitControls (enableRotate). Any user interaction ('start' fires on
+  // drag, wheel and touch) marks the camera as user-owned.
   useEffect(() => {
     const controls = fgRef.current?.controls();
     if (!controls) return;
     controls.noRotate = true;
     controls.enableRotate = false;
+    const markNavigated = () => { userNavigated.current = true; };
+    controls.addEventListener('start', markNavigated);
+    return () => controls.removeEventListener('start', markNavigated);
   }, [graphData]);
+
+  // Dolly limits: don't zoom through the plane or shrink the graph to a
+  // speck. Derived from the current fit distance so they scale with the graph.
+  useEffect(() => {
+    const controls = fgRef.current?.controls();
+    if (!controls) return;
+    controls.minDistance = 15;
+    controls.maxDistance = Math.max(fitDistance() * 2.5, 300);
+  }, [fitDistance]);
 
   const nodeThreeObject = useCallback((node: GraphNode) => {
     const borderColor = nodeColors[node.id] || '#e8a838';
@@ -331,6 +367,20 @@ export function NetworkView({
         backgroundColor="rgba(0,0,0,0)"
         showNavInfo={false}
       />
+      <button
+        className="network-recentre"
+        onClick={handleRecentre}
+        title="Re-centre graph"
+        aria-label="Re-centre graph"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+          <circle cx="12" cy="12" r="6.5" />
+          <line x1="12" y1="1.5" x2="12" y2="5" />
+          <line x1="12" y1="19" x2="12" y2="22.5" />
+          <line x1="1.5" y1="12" x2="5" y2="12" />
+          <line x1="19" y1="12" x2="22.5" y2="12" />
+        </svg>
+      </button>
     </div>
   );
 }

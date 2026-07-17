@@ -6,6 +6,29 @@
   touch-action: none;
 }
 
+.network-recentre {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border2);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.network-recentre:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
 .network-view-empty {
   display: flex;
   align-items: center;
