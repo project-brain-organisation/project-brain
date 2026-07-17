@@ -13,6 +13,38 @@
   z-index: 20;
 }
 
+/* Small, unobtrusive jump-to-latest — shown once the newest card scrolls
+ * out of view. Sits bottom-right; on mobile it rides just above the FAB. */
+.thoughts-list-jump {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: color 0.15s, border-color 0.15s;
+  animation: thoughtCardIn 0.15s ease;
+}
+
+.thoughts-list-jump:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.thoughts-list-jump--above-fab {
+  right: 28px;
+  bottom: 84px;
+}
+
 .thoughts-list-header {
   display: flex;
   align-items: flex-start;
@@ -490,7 +522,8 @@
   .thoughts-list-cards {
     padding-bottom: 88px;
   }
-  .thoughts-list:has(.thought-card-tag--editing, .thought-card-text--editing) .thoughts-list-fab {
+  .thoughts-list:has(.thought-card-tag--editing, .thought-card-text--editing) .thoughts-list-fab,
+  .thoughts-list:has(.thought-card-tag--editing, .thought-card-text--editing) .thoughts-list-jump {
     display: none;
   }
 }

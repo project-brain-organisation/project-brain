@@ -110,6 +110,23 @@ export function ThoughtsList({
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const cardsRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+  const [showJump, setShowJump] = useState(false);
+
+  // WhatsApp-style jump-to-latest: a sentinel after the last card tells us
+  // whether the newest thought is in view; the margin stops boundary flicker.
+  useEffect(() => {
+    const root = cardsRef.current;
+    const target = endRef.current;
+    if (!root || !target) return;
+    const io = new IntersectionObserver(
+      ([entry]) => setShowJump(!entry.isIntersecting),
+      { root, rootMargin: '0px 0px 120px 0px' },
+    );
+    io.observe(target);
+    return () => io.disconnect();
+  }, []);
   // Labels only apply to real thoughts — the project root pseudo-node is not
   // a taggable entity in the v2 model.
   const isProjectRoot = !!activeNode?.isRoot;
@@ -503,7 +520,7 @@ export function ThoughtsList({
         </div>
       )}
 
-      <div className="thoughts-list-cards">
+      <div className="thoughts-list-cards" ref={cardsRef}>
         {thoughts.length === 0 ? (
           <div className="thoughts-list-empty">No thoughts yet. Create one to get started.</div>
         ) : visibleThoughts.length === 0 ? (
@@ -525,7 +542,18 @@ export function ThoughtsList({
             />
           ))
         )}
+        <div className="thoughts-list-end" ref={endRef} />
       </div>
+      {showJump && (
+        <button
+          className={`thoughts-list-jump${createFab && !readOnly ? ' thoughts-list-jump--above-fab' : ''}`}
+          onClick={() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })}
+          title="Scroll to latest"
+          aria-label="Scroll to latest"
+        >
+          <ChevronDownIcon />
+        </button>
+      )}
       {createFab && !readOnly && (
         <Fab
           className="thoughts-list-fab"
