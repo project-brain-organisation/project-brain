@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Thought } from '../hooks/useThoughts';
 import { useThoughtLabels } from '../hooks/useLabels';
 import { LabelPicker } from './LabelPicker';
+import { ParentPicker } from './ParentPicker';
 import './ThoughtCard.css';
 
 interface Props {
@@ -28,6 +29,7 @@ function formatTime(iso: string): string {
 export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocusBody, readOnly }: Props) {
   const { thoughtLabels, edgeRelationships, assignLabel, unassignLabel, refresh } = useThoughtLabels(thought.id, thought.projectId);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [parentPickerOpen, setParentPickerOpen] = useState(false);
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
 
@@ -96,13 +98,27 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
     setPickerOpen(true);
   }
 
-  const hasActions = !!onNavigate || !!(onDelete && !readOnly);
+  const hasActions = !!onNavigate || !!(onDelete && !readOnly) || (!readOnly && !thought.isRoot);
   const editing = (editingTitle || editingBody) && !readOnly;
 
   return (
     <div className={`thought-card${hasActions ? ' thought-card--has-actions' : ''}${editing ? ' thought-card--editing' : ''}`}>
       {hasActions && (
       <div className="thought-card-actions">
+        {/* The root pseudo-node has no parent to set. */}
+        {!readOnly && !thought.isRoot && (
+          <button
+            className="thought-card-action thought-card-action--parent"
+            onClick={() => setParentPickerOpen(true)}
+            title="Set parent thought"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 19V9" />
+              <path d="m7 13 5-5 5 5" />
+              <path d="M5 5h14" />
+            </svg>
+          </button>
+        )}
         {onNavigate && (
           <button
             className="thought-card-action thought-card-action--nav"
@@ -229,6 +245,9 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
             <path d="M20 6 9 17l-5-5" />
           </svg>
         </button>
+      )}
+      {parentPickerOpen && (
+        <ParentPicker thought={thought} onClose={() => setParentPickerOpen(false)} />
       )}
       {pickerOpen && createPortal(
         <LabelPicker

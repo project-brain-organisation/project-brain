@@ -226,6 +226,50 @@ export function useThoughts(projectId?: string) {
 
   const removeThought = useCallback((id: string) => removeMutation.mutate(id), [removeMutation.mutate]);
 
+  const reparentMutation = useWorkspaceMutation(
+    projectId,
+    'Set parent',
+    async ({ oldRelId, newRel }: { oldRelId: string | null; newRel: Relationship | null }) => {
+      // Sequential so the server never sees two parents at once.
+      if (oldRelId) await relationshipsApi.remove(oldRelId);
+      if (newRel) {
+        await relationshipsApi.create({
+          id: newRel.id, projectId: newRel.projectId, sourceId: newRel.sourceId,
+          targetId: newRel.targetId, kind: 'hierarchy',
+        });
+      }
+    },
+    (snap, { oldRelId, newRel }) => ({
+      ...snap,
+      relationships: [
+        ...snap.relationships.filter((r) => r.id !== oldRelId),
+        ...(newRel ? [newRel] : []),
+      ],
+    }),
+  );
+
+  /** Move a thought under a new parent (null = top level). Refuses cycles:
+   *  the server validates endpoints but not ancestry, and a loop would
+   *  corrupt the hierarchy. */
+  const setParent = useCallback((childId: string, parentId: string | null) => {
+    if (!projectId) return;
+    const byId = new Map(thoughts.map((t) => [t.id, t]));
+    const child = byId.get(childId);
+    if (!child || child.parentId === parentId || parentId === childId) return;
+    for (let cur = parentId; cur; cur = byId.get(cur)?.parentId ?? null) {
+      if (cur === childId) return;
+    }
+    reparentMutation.mutate({
+      oldRelId: child.parentRelationshipId,
+      newRel: parentId
+        ? {
+            id: crypto.randomUUID(), projectId, ownerId: '', sourceId: childId,
+            targetId: parentId, kind: 'hierarchy', labelId: null, createdAt: '', updatedAt: '',
+          }
+        : null,
+    });
+  }, [projectId, thoughts, reparentMutation.mutate]);
+
   const addRelMutation = useWorkspaceMutation(
     projectId,
     'Add relationship',
@@ -267,6 +311,7 @@ export function useThoughts(projectId?: string) {
     createThought,
     updateThought,
     setThoughtColor,
+    setParent,
     removeThought,
     createEdgeRelationship,
     removeEdgeRelationship,

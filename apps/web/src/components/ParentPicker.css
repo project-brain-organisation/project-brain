@@ -1,0 +1,88 @@
+.pp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.pp-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  padding: 14px;
+  width: 320px;
+  max-width: calc(100% - 48px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pp-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--dim);
+  word-break: break-word;
+}
+
+.pp-search {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 7px 10px;
+  outline: none;
+}
+
+.pp-search:focus {
+  border-color: var(--border2);
+}
+
+.pp-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pp-item {
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-item:hover {
+  background: var(--surface2);
+}
+
+.pp-item--top {
+  font-style: italic;
+  color: var(--dim);
+}
+
+.pp-item--current {
+  background: var(--surface2);
+  font-weight: 600;
+}
+
+.pp-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 9px;
+}
