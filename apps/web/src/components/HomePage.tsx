@@ -65,6 +65,21 @@ export function HomePage() {
   const graphEverOpened = useRef(false);
   const sheetMax = () => window.innerHeight * 0.46;
 
+  // The graph sheet and each in-graph drill are separate history entries, and a
+  // drill lands on top of the open-graph entry. So closing via history-back
+  // would pop the drill, not the sheet. Record the index from just before the
+  // sheet opened; closing pops straight back to it — sheet plus any drills done
+  // inside it — in one tap. The back gesture still unwinds one level at a time.
+  const graphOpenBaseIdx = useRef(0);
+  const historyIdx = () => (window.history.state?.idx as number | undefined) ?? 0;
+  const openGraphSheet = useCallback(() => {
+    graphOpenBaseIdx.current = historyIdx();
+    openGraph();
+  }, [openGraph]);
+  const closeGraphSheet = useCallback(() => {
+    closeGraph(Math.max(1, historyIdx() - graphOpenBaseIdx.current));
+  }, [closeGraph]);
+
   const handleSheetDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     sheetDrag.current = {
@@ -91,14 +106,14 @@ export function HomePage() {
     setSheetDragging(false);
     if (!drag || !sheet) return;
     if (!drag.moved) {
-      if (graphOpen) closeGraph();
-      else openGraph();
+      if (graphOpen) closeGraphSheet();
+      else openGraphSheet();
       return;
     }
     const shouldOpen = sheet.getBoundingClientRect().height > sheetMax() / 2;
-    if (shouldOpen && !graphOpen) openGraph();
-    else if (!shouldOpen && graphOpen) closeGraph();
-  }, [graphOpen, openGraph, closeGraph]);
+    if (shouldOpen && !graphOpen) openGraphSheet();
+    else if (!shouldOpen && graphOpen) closeGraphSheet();
+  }, [graphOpen, openGraphSheet, closeGraphSheet]);
 
   // After a drag settles (same batch as the open/close flag flip), hand the
   // height back to CSS on the next frame so the transition animates from the
@@ -150,15 +165,16 @@ export function HomePage() {
     if (!thoughts.some((t) => t.id === focusedNodeId)) setFocusedNodeId(undefined);
   }, [loading, focusedNodeId, thoughts]);
 
-  // On first load, keep the restored selection if it still exists;
-  // otherwise fall back to the first project.
-  const hasAutoSelected = useRef(false);
-  if (!hasAutoSelected.current && !projectsLoading && projects.length > 0) {
-    hasAutoSelected.current = true;
+  // Keep the restored selection if it still exists; otherwise fall back to the
+  // first project (and self-heal if the selected project is later deleted). An
+  // effect, not a render-time setState: this writes the SelectedRoot context,
+  // and updating another component during render warns and can cascade.
+  useEffect(() => {
+    if (projectsLoading || projects.length === 0) return;
     if (!projects.some((p) => p.id === selectedRootId)) {
       setSelectedRootId(projects[0].id);
     }
-  }
+  }, [projectsLoading, projects, selectedRootId, setSelectedRootId]);
 
   const selectedProject = projects.find((p) => p.id === selectedRootId);
   const rootNode = selectedProject ? projectToRootNode(selectedProject) : undefined;
