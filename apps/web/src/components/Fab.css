@@ -30,8 +30,3 @@
   white-space: nowrap;
 }
 
-.fab--hidden {
-  transform: scale(0);
-  opacity: 0;
-  pointer-events: none;
-}

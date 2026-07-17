@@ -1,25 +1,25 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import './Fab.css';
 
-/** True while a text field has focus — i.e. the on-screen keyboard is likely up. */
-function useTypingFocus(): boolean {
-  const [typing, setTyping] = useState(false);
+/** Height of the on-screen keyboard covering the layout viewport, in px.
+ *  0 on desktop and whenever the keyboard is down. Keeps the FAB reachable
+ *  while typing instead of buried under (or hidden from) the keyboard. */
+function useKeyboardInset(): number {
+  const [inset, setInset] = useState(0);
   useEffect(() => {
-    const check = () => {
-      const el = document.activeElement;
-      setTyping(!!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'));
-    };
-    // focusout fires before the next element gains focus — defer so moving
-    // between fields doesn't flash the FAB.
-    const deferredCheck = () => setTimeout(check, 0);
-    document.addEventListener('focusin', check);
-    document.addEventListener('focusout', deferredCheck);
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () =>
+      setInset(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
     return () => {
-      document.removeEventListener('focusin', check);
-      document.removeEventListener('focusout', deferredCheck);
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
     };
   }, []);
-  return typing;
+  return inset;
 }
 
 interface Props {
@@ -28,21 +28,17 @@ interface Props {
   label?: string;
   ariaLabel?: string;
   onClick: () => void;
-  /** Scale out while the on-screen keyboard is up. */
-  hideWhileTyping?: boolean;
   className?: string;
 }
 
-/** Material floating action button; positioned by the caller via className. */
-export function Fab({ icon, label, ariaLabel, onClick, hideWhileTyping, className }: Props) {
-  const typing = useTypingFocus();
-  const hidden = hideWhileTyping && typing;
+/** Material floating action button; positioned by the caller via className.
+ *  Rides above the on-screen keyboard automatically. */
+export function Fab({ icon, label, ariaLabel, onClick, className }: Props) {
+  const inset = useKeyboardInset();
   return (
     <button
-      className={
-        `fab${label ? ' fab--extended' : ''}${hidden ? ' fab--hidden' : ''}` +
-        (className ? ` ${className}` : '')
-      }
+      className={`fab${label ? ' fab--extended' : ''}` + (className ? ` ${className}` : '')}
+      style={inset ? { transform: `translateY(-${inset}px)` } : undefined}
       onClick={onClick}
       aria-label={ariaLabel ?? label}
     >
