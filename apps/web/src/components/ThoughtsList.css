@@ -319,7 +319,6 @@
 }
 /* Reuses .thought-card-commit looks, but flows after the textarea. */
 .thoughts-list-body-commit {
-  position: static;
   align-self: flex-end;
 }
 
@@ -493,4 +492,12 @@
   font-size: 12px;
   text-align: center;
   padding: 20px;
+}
+
+/* Mobile: the FAB (56px + 16px inset) owns the bottom-right corner — pad the
+ * list so the last card can scroll clear of it. */
+@media (max-width: 768px) {
+  .thoughts-list-cards {
+    padding-bottom: 88px;
+  }
 }

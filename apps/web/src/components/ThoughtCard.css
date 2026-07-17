@@ -1,6 +1,7 @@
 ﻿/* â”€â”€â”€ ThoughtCard â€” matches NoteCard editorial styling.
- * Structure: .thought-card-top (time + optional title tag),
- *            .thought-card-text (body).
+ * Structure: .thought-card-top (title tag + actions, or commit tick while editing),
+ *            .thought-card-text (body),
+ *            .thought-card-labels (labels/edges + time, right-aligned).
  * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 .thought-card {
@@ -18,17 +19,20 @@
 }
 .thought-card:hover { border-color: rgba(180, 130, 60, 0.75); }
 
-/* â”€â”€â”€ Action buttons (top-right) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── Action buttons (header row, in flow) ────────────
+ * Static flex items, not absolute: they occupy real layout space, so the
+ * title can never slide under them. Desktop reveals them on hover via
+ * opacity only. While editing, the commit tick renders in this slot. */
 .thought-card-actions {
-  position: absolute;
-  top: 6px;
-  right: 6px;
   display: flex;
   gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
   opacity: 0;
   transition: opacity 0.12s;
 }
-.thought-card:hover .thought-card-actions { opacity: 1; }
+.thought-card:hover .thought-card-actions,
+.thought-card:focus-within .thought-card-actions { opacity: 1; }
 
 .thought-card-action {
   background: none;
@@ -56,27 +60,24 @@
 /* â”€â”€â”€ Top row: time + optional title tag â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .thought-card-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin-bottom: 7px;
-  flex-wrap: wrap;
-}
-/* Reserve the action-button zone so long titles wrap before it
- * instead of sitting under the hover-revealed icons. */
-.thought-card--has-actions .thought-card-top {
-  padding-right: 48px;
+  /* Single line: long titles wrap inside their chip (min-width: 0), never
+   * under the action buttons, which keep their width on the right. */
+  flex-wrap: nowrap;
 }
 .thought-card-time {
   font-family: var(--font-mono);
   font-size: 9px;
   color: var(--muted);
   letter-spacing: 0.3px;
-  /* Title chip leads the row flush with the body text; time hugs the right.
-   * An empty time span used to occupy the first flex slot and its gap pushed
-   * every title 8px off the body's left edge. */
+  /* Lives in the footer row: labels left, time hugs the right. */
   margin-left: auto;
+  flex-shrink: 0;
 }
 .thought-card-tag {
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 9px;
   border: 1px solid var(--border2);
@@ -104,6 +105,7 @@
   background: transparent;
   outline: none;
   min-width: 60px;
+  flex: 1;
 }
 
 /* â”€â”€â”€ Body â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -137,16 +139,13 @@
 }
 
 /* ─── Editing commit tick ─────────────────────────────── */
-/* Reserve room so the tick never sits on the labels row. */
-.thought-card--editing {
-  padding-bottom: 44px;
-}
+/* In flow, replacing the action cluster in the header row — never under
+ * the mobile FAB (which owns the bottom-right corner of the screen). */
 .thought-card-commit {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 50%;
   background: var(--text);
@@ -155,7 +154,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
   transition: transform 0.1s;
 }
 .thought-card-commit:active {
@@ -257,16 +256,19 @@
     padding: 8px 10px;
     border-radius: 4px;
   }
-  /* Touch: no hover to reveal actions — keep them visible and tappable
-   * in their own top-right strip, with the card content pushed below it. */
+  /* Touch: no hover — actions stay visible, sharing the header row with
+   * the title (which shrinks and wraps beside them). */
   .thought-card-actions {
     opacity: 1;
-    top: 0;
   }
   .thought-card-action {
     width: 30px;
     height: 30px;
     font-size: 17px;
+  }
+  .thought-card-commit {
+    width: 30px;
+    height: 30px;
   }
   .thought-card-label-add {
     width: 28px;
@@ -275,11 +277,6 @@
   .thought-card-top {
     gap: 6px;
     margin-bottom: 4px;
-  }
-  /* Icons are 30px tall from the card's top edge (card padding is 8px). */
-  .thought-card--has-actions .thought-card-top {
-    margin-top: 24px;
-    padding-right: 0;
   }
   .thought-card-time { font-size: 8.5px; }
   .thought-card-tag { font-size: 8.5px; padding: 0 4px; }

@@ -102,43 +102,8 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
   const editing = (editingTitle || editingBody) && !readOnly;
 
   return (
-    <div className={`thought-card${hasActions ? ' thought-card--has-actions' : ''}${editing ? ' thought-card--editing' : ''}`}>
-      {hasActions && (
-      <div className="thought-card-actions">
-        {/* The root pseudo-node has no parent to set. */}
-        {!readOnly && !thought.isRoot && (
-          <button
-            className="thought-card-action thought-card-action--parent"
-            onClick={() => setParentPickerOpen(true)}
-            title="Set parent thought"
-          >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 19V9" />
-              <path d="m7 13 5-5 5 5" />
-              <path d="M5 5h14" />
-            </svg>
-          </button>
-        )}
-        {onNavigate && (
-          <button
-            className="thought-card-action thought-card-action--nav"
-            onClick={() => onNavigate(thought.id)}
-            title="View as node"
-          >
-            →
-          </button>
-        )}
-        {onDelete && !readOnly && !thought.isRoot && (
-          <button
-            className="thought-card-action thought-card-action--delete"
-            onClick={() => onDelete(thought.id)}
-            title="Remove"
-          >
-            ×
-          </button>
-        )}
-      </div>
-      )}
+    <div className="thought-card">
+      {(thought.title || editing || hasActions) && (
       <div className="thought-card-top">
         {editingTitle ? (
           <input
@@ -167,10 +132,61 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
             </span>
           ) : null
         )}
-        {formatTime(thought.updatedAt) && (
-          <span className="thought-card-time">{formatTime(thought.updatedAt)}</span>
+        {editing ? (
+          <button
+            className="thought-card-commit"
+            title="Done"
+            aria-label="Finish editing"
+            // preventDefault keeps the field focused through mousedown so blur
+            // doesn't commit-and-unmount this button before the click lands.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              if (editingTitle) commitTitle();
+              if (editingBody) commitBody();
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 6 9 17l-5-5" />
+            </svg>
+          </button>
+        ) : hasActions && (
+          <div className="thought-card-actions">
+            {/* The root pseudo-node has no parent to set. */}
+            {!readOnly && !thought.isRoot && (
+              <button
+                className="thought-card-action thought-card-action--parent"
+                onClick={() => setParentPickerOpen(true)}
+                title="Set parent thought"
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 19V9" />
+                  <path d="m7 13 5-5 5 5" />
+                  <path d="M5 5h14" />
+                </svg>
+              </button>
+            )}
+            {onNavigate && (
+              <button
+                className="thought-card-action thought-card-action--nav"
+                onClick={() => onNavigate(thought.id)}
+                title="View as node"
+              >
+                →
+              </button>
+            )}
+            {onDelete && !readOnly && !thought.isRoot && (
+              <button
+                className="thought-card-action thought-card-action--delete"
+                onClick={() => onDelete(thought.id)}
+                title="Remove"
+              >
+                ×
+              </button>
+            )}
+          </div>
         )}
       </div>
+      )}
 
       {editingBody ? (
         <textarea
@@ -231,25 +247,10 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
           </span>
         ))}
         {!readOnly && <button className="thought-card-label-add" onClick={() => openPicker()}>+</button>}
+        {formatTime(thought.updatedAt) && (
+          <span className="thought-card-time">{formatTime(thought.updatedAt)}</span>
+        )}
       </div>
-      )}
-      {editing && (
-        <button
-          className="thought-card-commit"
-          title="Done"
-          aria-label="Finish editing"
-          // preventDefault keeps the field focused through mousedown so blur
-          // doesn't commit-and-unmount this button before the click lands.
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            if (editingTitle) commitTitle();
-            if (editingBody) commitBody();
-          }}
-        >
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
-        </button>
       )}
       {parentPickerOpen && (
         <ParentPicker thought={thought} onClose={() => setParentPickerOpen(false)} />
