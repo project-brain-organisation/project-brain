@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, getTableColumns, inArray } from 'drizzle-orm';
 import { DatabaseService } from '../../database/database.service';
 import { isUniqueViolation } from '../../database/pg-errors';
 import { ProjectsService, READ_ONLY_GRAPH_MESSAGE } from '../../projects/projects.service';
@@ -297,11 +297,13 @@ export class ThoughtsService {
 
   async findByProject(userId: string, projectId: string) {
     // Ownership isolation is enforced by RLS — only rows owned by the current
-    // user are visible on this read path.
+    // user are visible on this read path. Timestamps live on the entities
+    // supertype row (TPT), not on thoughts.
     return this.db.asUser(userId, async (tx) =>
       tx
-        .select()
+        .select({ ...getTableColumns(thoughts), createdAt: entities.createdAt, updatedAt: entities.updatedAt })
         .from(thoughts)
+        .innerJoin(entities, eq(entities.id, thoughts.id))
         .where(eq(thoughts.projectId, projectId)),
     );
   }

@@ -44,7 +44,7 @@ export interface Thought {
   canvasY: number | null;
   width: number | null;
   height: number | null;
-  /** Not returned by the v2 thoughts endpoint (lives on entities); '' when unknown. */
+  /** From the entities supertype row; '' when unknown (root pseudo-node). */
   createdAt: string;
   updatedAt: string;
   /** Hierarchy relationship id linking this thought to its parent, if any. */
@@ -69,8 +69,8 @@ function toClientThought(
     canvasY: row.canvasY,
     width: row.width,
     height: row.height,
-    createdAt: '',
-    updatedAt: '',
+    createdAt: row.createdAt ?? '',
+    updatedAt: row.updatedAt ?? '',
     parentRelationshipId: parentRel ? parentRel.id : null,
   };
 }
@@ -99,7 +99,11 @@ function deriveViews(snap?: WorkspaceSnapshot) {
   }
 
   return {
-    thoughts: snap.thoughts.map((row) => toClientThought(row, hierarchyBySource)),
+    // Messaging-app order: oldest at the top, newest at the bottom. ISO strings
+    // compare lexicographically; rows without a timestamp sort first.
+    thoughts: snap.thoughts
+      .map((row) => toClientThought(row, hierarchyBySource))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     edgeRelationships,
   };
 }
@@ -153,6 +157,9 @@ export function useThoughts(projectId?: string) {
     // A parent that is a real thought becomes a hierarchy edge (created
     // server-side in the same tx). The project id itself means "top level".
     const parentId = opts?.parentId && opts.parentId !== projectId ? opts.parentId : undefined;
+    // Stamp timestamps locally so the optimistic row sorts to the bottom;
+    // the snapshot refetch replaces them with the server's.
+    const now = new Date().toISOString();
     const row: ApiThought = {
       id: crypto.randomUUID(),
       projectId,
@@ -165,6 +172,8 @@ export function useThoughts(projectId?: string) {
       canvasY: opts?.canvasY ?? null,
       width: null,
       height: null,
+      createdAt: now,
+      updatedAt: now,
     };
     createMutation.mutate({ row, parentId, tempRelId: crypto.randomUUID() });
     return { ...toClientThought(row, new Map()), parentId: parentId ?? null };

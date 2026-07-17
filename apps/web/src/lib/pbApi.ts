@@ -52,6 +52,9 @@ export interface Thought {
   canvasY: number | null;
   width: number | null;
   height: number | null;
+  /** From the entities supertype row; create/update responses omit them. */
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Label {
