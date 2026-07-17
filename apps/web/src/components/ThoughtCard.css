@@ -136,7 +136,33 @@
   font-style: italic;
 }
 
-/* â”€â”€â”€ Labels row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─── Editing commit tick ─────────────────────────────── */
+/* Reserve room so the tick never sits on the labels row. */
+.thought-card--editing {
+  padding-bottom: 44px;
+}
+.thought-card-commit {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: transform 0.1s;
+}
+.thought-card-commit:active {
+  transform: scale(0.92);
+}
+
+/* ─── Labels row ────────────────────────────────────── */
 .thought-card-labels {
   display: flex;
   align-items: center;

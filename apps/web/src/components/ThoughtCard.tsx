@@ -97,9 +97,10 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
   }
 
   const hasActions = !!onNavigate || !!(onDelete && !readOnly);
+  const editing = (editingTitle || editingBody) && !readOnly;
 
   return (
-    <div className={`thought-card${hasActions ? ' thought-card--has-actions' : ''}`}>
+    <div className={`thought-card${hasActions ? ' thought-card--has-actions' : ''}${editing ? ' thought-card--editing' : ''}`}>
       {hasActions && (
       <div className="thought-card-actions">
         {onNavigate && (
@@ -211,6 +212,24 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
         ))}
         {!readOnly && <button className="thought-card-label-add" onClick={() => openPicker()}>+</button>}
       </div>
+      {editing && (
+        <button
+          className="thought-card-commit"
+          title="Done"
+          aria-label="Finish editing"
+          // preventDefault keeps the field focused through mousedown so blur
+          // doesn't commit-and-unmount this button before the click lands.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (editingTitle) commitTitle();
+            if (editingBody) commitBody();
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        </button>
+      )}
       {pickerOpen && createPortal(
         <LabelPicker
           thoughtLabels={thoughtLabels}

@@ -281,21 +281,34 @@ export function ThoughtsList({
           {!isProjectRoot && readOnly ? (
             <p className="thoughts-list-header-body">{activeNode?.body}</p>
           ) : !isProjectRoot && (editingBody ? (
-            <textarea
-              ref={bodyTextareaRef}
-              className="thoughts-list-body-input"
-              value={bodyDraft}
-              onChange={(e) => {
-                setBodyDraft(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = e.target.scrollHeight + 'px';
-              }}
-              onBlur={commitBody}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') setEditingBody(false);
-              }}
-              rows={1}
-            />
+            <div className="thoughts-list-body-editwrap">
+              <textarea
+                ref={bodyTextareaRef}
+                className="thoughts-list-body-input"
+                value={bodyDraft}
+                onChange={(e) => {
+                  setBodyDraft(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = e.target.scrollHeight + 'px';
+                }}
+                onBlur={commitBody}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setEditingBody(false);
+                }}
+                rows={1}
+              />
+              <button
+                className="thought-card-commit thoughts-list-body-commit"
+                title="Done"
+                aria-label="Finish editing"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={commitBody}
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              </button>
+            </div>
           ) : (
             <p
               className="thoughts-list-header-body thoughts-list-body-editable"
