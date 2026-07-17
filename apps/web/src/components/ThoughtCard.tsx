@@ -128,7 +128,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
             →
           </button>
         )}
-        {onDelete && !readOnly && (
+        {onDelete && !readOnly && !thought.isRoot && (
           <button
             className="thought-card-action thought-card-action--delete"
             onClick={() => onDelete(thought.id)}
@@ -186,14 +186,18 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
           rows={1}
         />
       ) : (
+        // The root pseudo-node has no persistable body in the v2 model.
+        !thought.isRoot && (
         <div
           className="thought-card-text"
           onClick={() => !readOnly && setEditingBody(true)}
         >
           {thought.body || (readOnly ? null : <span className="thought-card-placeholder">Click to add text...</span>)}
         </div>
+        )
       )}
 
+      {!thought.isRoot && (
       <div className="thought-card-labels">
         {thoughtLabels.map((tl) => (
           <button
@@ -228,6 +232,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
         ))}
         {!readOnly && <button className="thought-card-label-add" onClick={() => openPicker()}>+</button>}
       </div>
+      )}
       {editing && (
         <button
           className="thought-card-commit"

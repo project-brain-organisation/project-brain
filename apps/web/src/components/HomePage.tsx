@@ -298,20 +298,28 @@ export function HomePage() {
 
   if (isMobile) {
     const isGraphScreen = location.pathname === '/graph';
-    const sheetThought = sheetNodeId ? thoughts.find((t) => t.id === sheetNodeId) : undefined;
+    // The root resolves to its pseudo-node — it has no thoughts row.
+    const sheetThought = sheetNodeId
+      ? sheetNodeId === selectedRootId
+        ? rootNode
+        : thoughts.find((t) => t.id === sheetNodeId)
+      : undefined;
     const sheetState: SheetState = sheetThought ? (sheetExpanded ? 'expanded' : 'peek') : 'closed';
 
     // Everything the focused subgraph shows besides the node itself: parent
     // (when it's a real thought, not the project root), children, and
-    // relationship neighbours.
+    // relationship neighbours. The root's children are the top-level thoughts
+    // (parentId null), which nodesAround can't see.
     const sheetParent = sheetThought
       ? thoughts.find((t) => t.id === sheetThought.parentId)
       : undefined;
     const sheetNeighbours = sheetThought
-      ? [
-          ...(sheetParent ? [sheetParent] : []),
-          ...nodesAround(sheetThought.id).filter((t) => t.id !== sheetParent?.id),
-        ]
+      ? sheetThought.isRoot
+        ? thoughts.filter((t) => !t.parentId)
+        : [
+            ...(sheetParent ? [sheetParent] : []),
+            ...nodesAround(sheetThought.id).filter((t) => t.id !== sheetParent?.id),
+          ]
       : [];
 
     const handleSheetState = (s: SheetState) => {
@@ -336,7 +344,6 @@ export function HomePage() {
                 thoughts={networkThoughts}
                 nodeColors={nodeColors}
                 onSelectNode={(id) => {
-                  if (id === selectedRootId) return; // project root has no preview
                   setSheetExpanded(false);
                   openSheet(id);
                 }}
@@ -354,7 +361,8 @@ export function HomePage() {
                 setSheetExpanded(false);
                 openSheet(id);
               }}
-              onUpdate={(id, data) => updateThought(id, data)}
+              // Routes the root pseudo-node's title edit to a project rename.
+              onUpdate={(id, data) => handleUpdateThought(id, data.title, data.body)}
               onDelete={requestDelete}
               readOnly={readOnly}
               fab={
