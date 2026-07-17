@@ -16,6 +16,12 @@ interface Props {
   readOnly?: boolean;
 }
 
+/* Any inline editor currently focused, card or header. While one of these is
+ * active, the click that blur-commits it must not also start a new edit:
+ * first click deselects, second click edits. */
+const EDITING_INPUTS =
+  '.thought-card-tag--editing, .thought-card-text--editing, .thoughts-list-title-input, .thoughts-list-body-input';
+
 function formatTime(iso: string): string {
   // The root pseudo-node has no timestamp; render nothing, not "Invalid Date".
   if (!iso) return '';
@@ -40,6 +46,22 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
 
   const titleRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const swallowClick = useRef(false);
+
+  // Runs before the browser blurs the active editor, so activeElement still
+  // tells us whether this click is the one dismissing an edit elsewhere.
+  function guardPointerDown() {
+    const ae = document.activeElement;
+    swallowClick.current =
+      !!ae && ae.matches(EDITING_INPUTS) && !rootRef.current?.contains(ae);
+  }
+
+  function shouldSwallowClick() {
+    const s = swallowClick.current;
+    swallowClick.current = false;
+    return s;
+  }
 
   useEffect(() => {
     if (autoFocusBody && bodyRef.current) {
@@ -102,7 +124,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
   const editing = (editingTitle || editingBody) && !readOnly;
 
   return (
-    <div className="thought-card">
+    <div className="thought-card" ref={rootRef}>
       {(thought.title || editing || hasActions) && (
       <div className="thought-card-top">
         {editingTitle ? (
@@ -119,7 +141,11 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
           />
         ) : (
           thought.title ? (
-            <span className="thought-card-tag" onClick={() => !readOnly && setEditingTitle(true)}>
+            <span
+              className="thought-card-tag"
+              onPointerDown={guardPointerDown}
+              onClick={() => !shouldSwallowClick() && !readOnly && setEditingTitle(true)}
+            >
               {thought.title}
             </span>
           ) : readOnly ? null : editingBody ? (
@@ -132,7 +158,7 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
             </span>
           ) : null
         )}
-        {!editing && hasActions && (
+        {hasActions && (
           <div className="thought-card-actions">
             {/* The root pseudo-node has no parent to set. */}
             {!readOnly && !thought.isRoot && (
@@ -182,6 +208,10 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
             e.target.style.height = e.target.scrollHeight + 'px';
           }}
           onBlur={commitBody}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) commitBody();
+            if (e.key === 'Escape') { setBodyDraft(thought.body); setEditingBody(false); }
+          }}
           rows={1}
         />
       ) : (
@@ -189,30 +219,12 @@ export function ThoughtCard({ thought, onUpdate, onDelete, onNavigate, autoFocus
         !thought.isRoot && (
         <div
           className="thought-card-text"
-          onClick={() => !readOnly && setEditingBody(true)}
+          onPointerDown={guardPointerDown}
+          onClick={() => !shouldSwallowClick() && !readOnly && setEditingBody(true)}
         >
           {thought.body || (readOnly ? null : <span className="thought-card-placeholder">Click to add text...</span>)}
         </div>
         )
-      )}
-
-      {editing && (
-        <button
-          className="thought-card-commit"
-          title="Done"
-          aria-label="Finish editing"
-          // preventDefault keeps the field focused through mousedown so blur
-          // doesn't commit-and-unmount this button before the click lands.
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            if (editingTitle) commitTitle();
-            if (editingBody) commitBody();
-          }}
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M20 6 9 17l-5-5" />
-          </svg>
-        </button>
       )}
 
       {!thought.isRoot && (

@@ -1,9 +1,9 @@
 ﻿/* â”€â”€â”€ ThoughtCard â€” matches NoteCard editorial styling.
  * Structure: .thought-card-top (title tag + actions),
  *            .thought-card-text (body),
- *            .thought-card-commit (editing only, right-aligned above the footer),
  *            .thought-card-labels (labels/edges + time, right-aligned).
- * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+ * Editing commits implicitly: blur saves, Escape cancels, Cmd/Ctrl+Enter
+ * saves the body. No explicit confirm control. */
 
 .thought-card {
   background: #fefcf9;
@@ -142,31 +142,6 @@
   font-style: italic;
 }
 
-/* ─── Editing commit tick ─────────────────────────────── */
-/* Own row between the body and the footer, hugging the right edge — just
- * above the date. The mobile FAB hides while editing so it can't cover it. */
-.thought-card-commit {
-  display: flex;
-  margin-left: auto;
-  flex-shrink: 0;
-  margin-top: 8px;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 50%;
-  background: var(--text);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
-  transition: transform 0.1s;
-}
-.thought-card-commit:active {
-  transform: scale(0.92);
-}
-
 /* ─── Footer row ──────────────────────────────────────
  * Labels wrap inside their own block; the time is a sibling pinned to the
  * bottom-right, so many labels can never push it onto its own line. */
@@ -282,10 +257,6 @@
     width: 30px;
     height: 30px;
     font-size: 17px;
-  }
-  .thought-card-commit {
-    width: 30px;
-    height: 30px;
   }
   .thought-card-label-add {
     width: 28px;
