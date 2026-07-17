@@ -87,7 +87,8 @@ export function HomePage() {
       startH: sheetRef.current?.getBoundingClientRect().height ?? 0,
       moved: false,
     };
-    setSheetDragging(true); // unpauses the graph so the reveal isn't blank
+    // No React work here: a plain tap must stay cheap and let the CSS
+    // transition animate the open/close. Drag setup waits for real movement.
   }, []);
 
   const handleSheetMove = useCallback((e: React.PointerEvent) => {
@@ -95,7 +96,15 @@ export function HomePage() {
     const sheet = sheetRef.current;
     if (!drag || !sheet) return;
     const dy = e.clientY - drag.startY;
-    if (Math.abs(dy) > 6) drag.moved = true;
+    if (!drag.moved) {
+      if (Math.abs(dy) <= 6) return; // ignore sub-threshold jitter; keep it a tap
+      drag.moved = true;
+      // Kill the transition on the first real move — synchronously, before the
+      // first flex-basis write — so the sheet tracks the finger from pixel one
+      // instead of easing behind it. Unpause the graph now that it's a drag.
+      sheet.style.transition = 'none';
+      setSheetDragging(true);
+    }
     sheet.style.flexBasis = `${Math.min(Math.max(drag.startH + dy, 0), sheetMax())}px`;
   }, []);
 
@@ -115,13 +124,16 @@ export function HomePage() {
     else if (!shouldOpen && graphOpen) closeGraphSheet();
   }, [graphOpen, openGraphSheet, closeGraphSheet]);
 
-  // After a drag settles (same batch as the open/close flag flip), hand the
-  // height back to CSS on the next frame so the transition animates from the
-  // dragged position to the snapped state.
+  // After a drag settles (same batch as the open/close flag flip), restore the
+  // CSS transition and hand the height back to CSS on the next frame, so it
+  // animates from the dragged position to the snapped (open/closed) state.
   useEffect(() => {
     if (sheetDragging || !sheetRef.current) return;
     const sheet = sheetRef.current;
-    const raf = requestAnimationFrame(() => { sheet.style.flexBasis = ''; });
+    const raf = requestAnimationFrame(() => {
+      sheet.style.transition = '';
+      sheet.style.flexBasis = '';
+    });
     return () => cancelAnimationFrame(raf);
   }, [sheetDragging, graphOpen]);
 
@@ -159,11 +171,12 @@ export function HomePage() {
 
   // Self-heal a dangling focus (e.g. the focused thought was deleted by an
   // MCP client): once the snapshot has loaded without it, fall back to the
-  // root view instead of rendering nothing.
+  // root view instead of rendering nothing. Focusing the root itself is valid
+  // even though the root pseudo-node is never in `thoughts`, so exempt it.
   useEffect(() => {
-    if (loading || !focusedNodeId) return;
+    if (loading || !focusedNodeId || focusedNodeId === selectedRootId) return;
     if (!thoughts.some((t) => t.id === focusedNodeId)) setFocusedNodeId(undefined);
-  }, [loading, focusedNodeId, thoughts]);
+  }, [loading, focusedNodeId, thoughts, selectedRootId]);
 
   // Keep the restored selection if it still exists; otherwise fall back to the
   // first project (and self-heal if the selected project is later deleted). An

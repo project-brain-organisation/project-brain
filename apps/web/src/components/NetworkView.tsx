@@ -223,13 +223,12 @@ export function NetworkView({
     return Math.max(halfH, halfW / aspect) / Math.tan(halfFov);
   }, [bbox, dimensions]);
 
-  const fitGraph = useCallback(() => {
+  const fitGraph = useCallback((animate = true) => {
     const fg = fgRef.current;
     if (!fg) return;
     const cx = (bbox.minX + bbox.maxX) / 2;
     const cy = (bbox.minY + bbox.maxY) / 2;
-    fg.cameraPosition({ x: cx, y: cy, z: fitDistance() }, { x: cx, y: cy, z: 0 }, firstFit.current ? 0 : 400);
-    firstFit.current = false;
+    fg.cameraPosition({ x: cx, y: cy, z: fitDistance() }, { x: cx, y: cy, z: 0 }, animate ? 400 : 0);
   }, [bbox, fitDistance]);
 
   // Once the user has zoomed/panned, data ticks (SSE invalidations, edits,
@@ -240,15 +239,23 @@ export function NetworkView({
   const identity = focusedNodeId ?? thoughts.find((t) => t.isRoot)?.id ?? '';
   const prevIdentity = useRef<string | null>(null);
 
-  // Refit on identity/data/container changes — unless the user has taken the
-  // camera. The short debounce coalesces the mobile sheet's continuous resizes.
+  // Refit when identity changes (project/focus) — animated — or when the
+  // container resizes (sheet open/close, drag, window resize) — snapped, no
+  // tween. Resizes arrive as a burst of ResizeObserver ticks, each rescheduling
+  // this timer; the trailing debounce collapses the burst into ONE fit so
+  // overlapping camera tweens can't fight each other into a flickering zoom.
   useEffect(() => {
-    if (prevIdentity.current !== identity) {
+    const identityChanged = prevIdentity.current !== identity;
+    if (identityChanged) {
       prevIdentity.current = identity;
       userNavigated.current = false;
     }
     if (userNavigated.current) return;
-    const timer = setTimeout(fitGraph, 50);
+    const animate = identityChanged && !firstFit.current;
+    const timer = setTimeout(() => {
+      fitGraph(animate);
+      firstFit.current = false;
+    }, identityChanged ? 50 : 180);
     return () => clearTimeout(timer);
   }, [identity, fitGraph]);
 
