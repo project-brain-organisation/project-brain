@@ -33,6 +33,9 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  /* Kill the grey/blue flash mobile WebKit paints over anything tapped
+     (buttons, cards, the hamburger). Focus/active styling is handled per-component. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 button, input, textarea, select {
