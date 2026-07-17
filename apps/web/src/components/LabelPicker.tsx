@@ -37,16 +37,16 @@ export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassi
   const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
   const [swatchTarget, setSwatchTarget] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  // Nothing is written until Add: selecting a label just highlights it.
-  const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+  // Nothing is written until Add: selecting labels just highlights them.
+  // Replace-mode (opened from an existing chip) stays single-select — swapping
+  // one chip for several labels is ambiguous.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   // Each edge label keeps its own chosen target, since every edge row shows a picker.
   const [targetByLabel, setTargetByLabel] = useState<Record<string, string>>({});
   const dialogRef = useRef<HTMLDivElement>(null);
   const swatchRef = useRef<HTMLDivElement>(null);
 
   const assignedIds = new Set(thoughtLabels.map((tl) => tl.id));
-  const selectedLabel = labels.find((l) => l.id === selectedLabelId) ?? null;
-  const selectedTarget = selectedLabel ? targetByLabel[selectedLabel.id] ?? '' : '';
 
   // Target options for an edge relationship: every other thought, sorted by name.
   const targetOptions = useMemo(
@@ -56,21 +56,18 @@ export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassi
     [thoughts, sourceThoughtId],
   );
 
-  // DB has a unique (source, target, label) index for edges — block up front.
-  const isDuplicateEdge = Boolean(
-    selectedLabel?.isEdge && selectedTarget &&
-    edgeRelationships.some(
-      (r) => r.sourceId === sourceThoughtId && r.targetId === selectedTarget && r.label?.id === selectedLabelId,
-    ),
-  );
-
-  const canAdd = Boolean(
-    selectedLabel && (
-      selectedLabel.isEdge
-        ? selectedTarget && !isDuplicateEdge
-        : editingLabelId || !assignedIds.has(selectedLabel.id)
-    ),
-  );
+  // The selected labels Add will actually write: plain tags not already on the
+  // thought (any tag while replacing), and edge labels with a target that isn't
+  // already an edge (the DB has a unique (source, target, label) index).
+  const actionable = labels.filter((l) => {
+    if (!selectedIds.has(l.id)) return false;
+    if (!l.isEdge) return editingLabelId ? true : !assignedIds.has(l.id);
+    const target = targetByLabel[l.id];
+    return Boolean(target) && !edgeRelationships.some(
+      (r) => r.sourceId === sourceThoughtId && r.targetId === target && r.label?.id === l.id,
+    );
+  });
+  const canAdd = actionable.length > 0;
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -93,29 +90,44 @@ export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassi
     return () => document.removeEventListener('mousedown', handleSwatchOutside);
   }, [swatchTarget]);
 
+  /** Add `labelId` to the selection — replacing it entirely in replace-mode. */
+  function selectLabel(labelId: string) {
+    setSelectedIds((prev) =>
+      editingLabelId ? new Set([labelId]) : new Set(prev).add(labelId));
+  }
+
   async function handleCreate() {
     const trimmed = newName.trim();
     if (!trimmed) return;
     // New labels are never edge labels, so this selects a plain tag ready to Add.
     const label = await createLabel(trimmed, newColor);
-    setSelectedLabelId(label.id);
+    selectLabel(label.id);
     setNewName('');
     setNewColor(PRESET_COLORS[0]);
   }
 
   function handleSelect(labelId: string) {
-    setSelectedLabelId(labelId);
+    setSelectedIds((prev) => {
+      if (prev.has(labelId)) {
+        const next = new Set(prev);
+        next.delete(labelId);
+        return next;
+      }
+      return editingLabelId ? new Set([labelId]) : new Set(prev).add(labelId);
+    });
   }
 
   function handleAdd() {
-    if (!selectedLabel || !canAdd) return;
-    if (selectedLabel.isEdge) {
-      createEdgeRelationship(sourceThoughtId, selectedTarget, {
-        id: selectedLabel.id, name: selectedLabel.name, color: selectedLabel.color,
-      });
-    } else {
-      if (editingLabelId) onUnassign(editingLabelId);
-      if (!assignedIds.has(selectedLabel.id)) onAssign(selectedLabel.id);
+    if (!canAdd) return;
+    if (editingLabelId) onUnassign(editingLabelId);
+    for (const label of actionable) {
+      if (label.isEdge) {
+        createEdgeRelationship(sourceThoughtId, targetByLabel[label.id], {
+          id: label.id, name: label.name, color: label.color,
+        });
+      } else if (!assignedIds.has(label.id)) {
+        onAssign(label.id);
+      }
     }
     onClose();
   }
@@ -164,7 +176,7 @@ export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassi
     updateLabel(labelId, { isEdge: !currentIsEdge });
     if (!currentIsEdge) {
       // Now an edge label — select it so Add targets it.
-      setSelectedLabelId(labelId);
+      selectLabel(labelId);
     } else {
       // No longer an edge label — drop any target it held.
       setTargetByLabel((prev) => {
@@ -177,7 +189,7 @@ export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassi
   function handleTargetChange(labelId: string, value: string) {
     setTargetByLabel((prev) => ({ ...prev, [labelId]: value }));
     // Choosing a target expresses intent to add this edge — select its label.
-    setSelectedLabelId(labelId);
+    selectLabel(labelId);
   }
 
   function renderSwatchPopover() {
@@ -208,9 +220,9 @@ export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassi
           <div className="lp-header-text">
             <h2 className="lp-title">Labels</h2>
             <p className="lp-desc">
-              Select a label, then press Add to attach it. For an edge label,
-              pick a target thought to link to. Click a colour dot to change
-              its colour.
+              Select one or more labels, then press Add to attach them. For an
+              edge label, pick a target thought to link to. Click a colour dot
+              to change its colour.
             </p>
           </div>
           <button className="lp-close" onClick={onClose}>&times;</button>
@@ -240,7 +252,7 @@ export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassi
 
           {labels.map((label) => {
             const isAssigned = assignedIds.has(label.id);
-            const isSelected = selectedLabelId === label.id;
+            const isSelected = selectedIds.has(label.id);
             return (
               <div key={label.id} className="lp-card-wrap">
                 <div
@@ -324,7 +336,7 @@ export function LabelPicker({ thoughtLabels, sourceThoughtId, onAssign, onUnassi
         {/* ── Primary action ──────────────────────────── */}
         <div className="lp-footer">
           <button className="lp-add-primary" onClick={handleAdd} disabled={!canAdd}>
-            Add
+            {actionable.length > 1 ? `Add ${actionable.length}` : 'Add'}
           </button>
         </div>
 
