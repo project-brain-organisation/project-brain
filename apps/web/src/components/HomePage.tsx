@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useThoughts, type Thought } from '../hooks/useThoughts';
 import { useProjects } from '../hooks/useProjects';
@@ -80,6 +80,27 @@ export function HomePage() {
   const drillToRoot = useCallback(() => {
     if (drillPath?.length) popDrill(drillPath.length);
   }, [drillPath, popDrill]);
+
+  // Switching project invalidates every bit of navigation state that pointed
+  // into the old project's graph — otherwise the new project renders filtered
+  // by a node it doesn't contain, i.e. empty.
+  const prevRootId = useRef(selectedRootId);
+  useEffect(() => {
+    if (prevRootId.current === selectedRootId) return;
+    prevRootId.current = selectedRootId;
+    setFocusedNodeId(undefined);
+    setSheetExpanded(false);
+    if (sheetNodeId) closeSheet();
+    if (drillPath?.length) popDrill(drillPath.length);
+  }, [selectedRootId, sheetNodeId, closeSheet, drillPath, popDrill]);
+
+  // Self-heal a dangling focus (e.g. the focused thought was deleted by an
+  // MCP client): once the snapshot has loaded without it, fall back to the
+  // root view instead of rendering nothing.
+  useEffect(() => {
+    if (loading || !focusedNodeId) return;
+    if (!thoughts.some((t) => t.id === focusedNodeId)) setFocusedNodeId(undefined);
+  }, [loading, focusedNodeId, thoughts]);
 
   // On first load, keep the restored selection if it still exists;
   // otherwise fall back to the first project.
