@@ -6,8 +6,13 @@ const MIN_RING = 22;
 /** Slack over raw label demand when sizing seed rings — the force polish
  *  resolves residual overlaps, so the seed can start tight. */
 const SECTOR_SLACK = 1.15;
-/** Synchronous polish ticks; enough for the seed to relax, cheap at our sizes. */
-const SETTLE_TICKS = 120;
+/** Synchronous polish ticks. The sim runs on the main thread, so scale the
+ *  budget down for large graphs — the final ticks barely move a big layout but
+ *  cost the most. Small graphs get the full budget for a clean relax. */
+const MAX_SETTLE_TICKS = 120;
+const MIN_SETTLE_TICKS = 40;
+const settleTicks = (nodeCount: number) =>
+  Math.min(MAX_SETTLE_TICKS, Math.max(MIN_SETTLE_TICKS, Math.round(6000 / nodeCount)));
 
 export interface LayoutNode {
   id: string;
@@ -126,7 +131,7 @@ export function mindMapLayout(
     .force('charge', forceManyBody().strength(-10))
     .force('collide', forceCollide().radius((d: LayoutNode) => d.radius + 1).iterations(2))
     .stop()
-    .tick(SETTLE_TICKS);
+    .tick(settleTicks(simNodes.length));
   for (const node of simNodes) positions.set(node.id, { x: node.x, y: node.y });
   return positions;
 }

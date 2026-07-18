@@ -9,9 +9,8 @@ import { RelationshipsDialog } from './RelationshipsDialog';
 import { ThoughtsList } from './ThoughtsList';
 import { ConfirmDialog } from './ConfirmDialog';
 import { thoughtName } from '../lib/thoughtName';
+import { DEFAULT_NODE_COLOR } from '../lib/graphNode';
 import './HomePage.css';
-
-const DEFAULT_NODE_COLOR = '#e8a838';
 
 /** Present the selected project as a root pseudo-thought so the list/graph
  *  components can treat it like any other node. */

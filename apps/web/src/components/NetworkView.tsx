@@ -1,13 +1,16 @@
 import { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
-import SpriteText from 'three-spritetext';
-import { Group, Sprite, SpriteMaterial, CanvasTexture, Raycaster, Vector2 } from 'three';
+import { Raycaster, Vector2 } from 'three';
 import type { Thought, EdgeRelationship } from '../hooks/useThoughts';
 import { mindMapLayout } from '../lib/mindMapLayout';
+import {
+  makeNodeObject,
+  DEFAULT_NODE_COLOR,
+  LABEL_HEIGHT,
+  ROOT_LABEL_HEIGHT,
+} from '../lib/graphNode';
 import './NetworkView.css';
 
-const LABEL_HEIGHT = 2.5;
-const ROOT_LABEL_HEIGHT = 4.5;
 const LABEL_MAX_CHARS = 20;
 const LABEL_MAX_LINES = 2;
 
@@ -346,55 +349,10 @@ export function NetworkView({
     onResetView?.();
   }, [onSelectNode, onResetView]);
 
-  const nodeThreeObject = useCallback((node: GraphNode) => {
-    const borderColor = nodeColors[node.id] || '#e8a838';
-
-    const hex = borderColor.replace('#', '');
-    const rb = parseInt(hex.substring(0, 2), 16);
-    const gb = parseInt(hex.substring(2, 4), 16);
-    const bb = parseInt(hex.substring(4, 6), 16);
-    const fillColor = `rgb(${Math.round(rb + (255 - rb) * 0.82)}, ${Math.round(gb + (255 - gb) * 0.82)}, ${Math.round(bb + (255 - bb) * 0.82)})`;
-
-    const group = new Group();
-    group.renderOrder = 10;
-
-    const res = 128;
-    const canvas = document.createElement('canvas');
-    canvas.width = res;
-    canvas.height = res;
-    const ctx = canvas.getContext('2d')!;
-    const cx = res / 2;
-    const cy = res / 2;
-    const r = res / 2 - 6;
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = fillColor;
-    ctx.fill();
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = borderColor;
-    ctx.stroke();
-
-    const texture = new CanvasTexture(canvas);
-    const material = new SpriteMaterial({ map: texture, transparent: true, depthTest: false });
-    const circle = new Sprite(material);
-    const scale = node.isRoot ? 14 : 9;
-    circle.scale.set(scale, scale, 1);
-    circle.renderOrder = 1;
-    group.add(circle);
-
-    if (node.hasTitle) {
-      const label = new SpriteText(node.name);
-      label.color = '#111111';
-      label.fontFace = 'Syne, sans-serif';
-      label.textHeight = node.isRoot ? ROOT_LABEL_HEIGHT : LABEL_HEIGHT;
-      label.material.depthTest = false;
-      label.renderOrder = 2;
-      group.add(label);
-    }
-
-    return group;
-  }, [nodeColors]);
+  const nodeThreeObject = useCallback(
+    (node: GraphNode) => makeNodeObject(node, nodeColors[node.id] || DEFAULT_NODE_COLOR),
+    [nodeColors],
+  );
 
   const linkColor = useCallback((link: GraphLink) => {
     return link.isLabelEdge ? 'rgba(200, 200, 200, 0.35)' : '#222222';
