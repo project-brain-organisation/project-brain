@@ -300,12 +300,22 @@ export function NetworkView({
     controls.maxDistance = Math.max(fitDistance() * 2.5, 300);
   }, [fitDistance]);
 
+  // When live, run the render loop. When paused (hidden/dragging mobile sheet),
+  // paint ONE fresh frame then stop: the scene is static, so the clipped reveal
+  // shows that frame without paying a continuous redraw — heavy on large graphs,
+  // where every transparent sprite re-sorts each frame. Repaint only when the
+  // size or data actually change, so a paused graph never shows a stale frame.
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    if (paused) fg.pauseAnimation();
-    else fg.resumeAnimation();
-  }, [paused]);
+    if (!paused) {
+      fg.resumeAnimation();
+      return;
+    }
+    fg.resumeAnimation();
+    const id = requestAnimationFrame(() => fg.pauseAnimation());
+    return () => cancelAnimationFrame(id);
+  }, [paused, dimensions, graphData]);
 
   // Node selection via our own tap detection instead of force-graph's:
   // its click handler bails on any >1px pointer movement (finger taps always

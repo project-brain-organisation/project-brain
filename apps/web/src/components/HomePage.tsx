@@ -434,8 +434,9 @@ export function HomePage() {
     // Latch-mount the graph on first interaction, then keep it mounted and
     // merely paused when the sheet is shut. Reopening is then instant — the
     // WebGL context and computed layout survive — instead of paying a fresh
-    // init (the ~1s sluggish open). Rendering resumes while dragging so the
-    // reveal is never a blank pane.
+    // init (the ~1s sluggish open). The graph stays paused DURING the drag too:
+    // the scene is static, so revealing it by clipping shows a single fresh
+    // frame without a per-frame redraw fighting the drag (the drag stutter).
     if (graphOpen || sheetDragging) graphEverOpened.current = true;
     const mountGraph = graphOpen || sheetDragging || graphEverOpened.current || preloadGraph;
 
@@ -454,7 +455,7 @@ export function HomePage() {
                 onResetView={drillToRoot}
                 edgeRels={edgeRelationships}
                 focusedNodeId={drilled ? drillId : undefined}
-                paused={!graphOpen && !sheetDragging}
+                paused={!graphOpen || sheetDragging}
               />
               {!readOnly && (
                 <div className="network-controls">
