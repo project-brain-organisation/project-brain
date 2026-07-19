@@ -53,9 +53,9 @@ export function ThoughtsList({ createFab = false }: { createFab?: boolean }) {
 
   return (
     <div className="thoughts-list">
-      <div className="thoughts-list-scroll" ref={cardsRef}>
-        {all.length > 0 && <SearchBar filter={filter} />}
+      {all.length > 0 && <SearchBar filter={filter} />}
 
+      <div className="thoughts-list-scroll" ref={cardsRef}>
         {!hideHeader && <NodeHeader onNew={handleCreate} />}
 
         <div className="thoughts-list-cards">
