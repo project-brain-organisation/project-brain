@@ -53,21 +53,23 @@ export function ThoughtsList({ createFab = false }: { createFab?: boolean }) {
 
   return (
     <div className="thoughts-list">
-      {!hideHeader && <NodeHeader onNew={handleCreate} />}
+      <div className="thoughts-list-scroll" ref={cardsRef}>
+        {!hideHeader && <NodeHeader onNew={handleCreate} />}
 
-      {all.length > 0 && <SearchBar filter={filter} />}
+        {all.length > 0 && <SearchBar filter={filter} />}
 
-      <div className="thoughts-list-cards" ref={cardsRef}>
-        {all.length === 0 ? (
-          <div className="thoughts-list-empty">No thoughts yet. Create one to get started.</div>
-        ) : visible.length === 0 ? (
-          <div className="thoughts-list-empty">{emptyMessage}</div>
-        ) : (
-          visible.map((thought) => (
-            <ThoughtCard key={thought.id} thought={thought} autoFocusBody={thought.id === newThoughtId} />
-          ))
-        )}
-        <div className="thoughts-list-end" ref={endRef} />
+        <div className="thoughts-list-cards">
+          {all.length === 0 ? (
+            <div className="thoughts-list-empty">No thoughts yet. Create one to get started.</div>
+          ) : visible.length === 0 ? (
+            <div className="thoughts-list-empty">{emptyMessage}</div>
+          ) : (
+            visible.map((thought) => (
+              <ThoughtCard key={thought.id} thought={thought} autoFocusBody={thought.id === newThoughtId} />
+            ))
+          )}
+          <div className="thoughts-list-end" ref={endRef} />
+        </div>
       </div>
 
       {showJump && (

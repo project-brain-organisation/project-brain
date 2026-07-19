@@ -456,10 +456,18 @@
 }
 
 /* â”€â”€â”€ Card stack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.thoughts-list-cards {
+/* The header and search scroll away with the cards — the whole column scrolls. */
+.thoughts-list-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.thoughts-list-cards {
+  flex: 1;
   padding: 0 28px 28px;
   display: flex;
   flex-direction: column;
@@ -470,7 +478,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  flex: 1;
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 12px;
