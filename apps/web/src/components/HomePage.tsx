@@ -44,8 +44,6 @@ export function HomePage() {
   const [creating, setCreating] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  // focusedNodeId drills into a child node within the selected project
-  const [focusedNodeId, setFocusedNodeId] = useState<string | undefined>(undefined);
   const [relDialogOpen, setRelDialogOpen] = useState(false);
 
   // Mobile: single screen with a slide-down graph top sheet. The sheet and
@@ -184,7 +182,6 @@ export function HomePage() {
   useEffect(() => {
     if (prevRootId.current === selectedRootId) return;
     prevRootId.current = selectedRootId;
-    setFocusedNodeId(undefined);
     if (drillPath?.length) popDrill(drillPath.length);
   }, [selectedRootId, drillPath, popDrill]);
 
@@ -193,9 +190,9 @@ export function HomePage() {
   // root view instead of rendering nothing. Focusing the root itself is valid
   // even though the root pseudo-node is never in `thoughts`, so exempt it.
   useEffect(() => {
-    if (loading || !focusedNodeId || focusedNodeId === selectedRootId) return;
-    if (!thoughts.some((t) => t.id === focusedNodeId)) setFocusedNodeId(undefined);
-  }, [loading, focusedNodeId, thoughts, selectedRootId]);
+    if (loading || !drillId || drillId === selectedRootId) return;
+    if (!thoughts.some((t) => t.id === drillId)) popDrill(1);
+  }, [loading, drillId, thoughts, selectedRootId, popDrill]);
 
   // Keep the restored selection if it still exists; otherwise fall back to the
   // first project (and self-heal if the selected project is later deleted). An
@@ -226,32 +223,17 @@ export function HomePage() {
     if (!selectedRootId) return;
     const project = await cloneProject(selectedRootId);
     setSelectedRootId(project.id);
-    setFocusedNodeId(undefined);
+    // The project-switch effect clears the navigation stack for the new project.
   }, [selectedRootId, cloneProject, setSelectedRootId]);
 
-  // Background click resets to project root view (not deselecting the project)
-  const handleResetView = useCallback(() => {
-    setFocusedNodeId(undefined);
-  }, []);
-
-  // Node click focuses it — the root included, whose focused view is its
-  // direct children (the top-level thoughts). Background click clears focus
-  // back to the whole graph.
-  const handleSelectNode = useCallback((id: string) => {
-    setFocusedNodeId(id);
-  }, []);
-
-  // Up one level: parent of the focused node; a null parent means the parent IS
-  // the project root, so clear the focus. Graph filtering follows for free —
-  // both the list and NetworkView re-derive from focusedNodeId.
-  const handleNavigateUp = useCallback(() => {
-    if (!focusedNodeId) return;
-    const focused = thoughts.find((t) => t.id === focusedNodeId);
-    setFocusedNodeId(focused?.parentId ?? undefined);
-  }, [focusedNodeId, thoughts]);
-
-  // The active node: focused child, or the project root
-  const activeNodeId = focusedNodeId || selectedRootId;
+  // Unified navigation: a single history-backed stack (drillPath) drives both
+  // the mobile and desktop views. Its tail is the active node; an empty stack
+  // means the project root. navigateToNode/Up/ToRoot are drillInto/drillUp/
+  // drillToRoot above, so the OS/browser Back gesture pops one level on both.
+  const drilled = !!drillPath?.length;
+  const activeNodeId =
+    drillId && thoughts.some((t) => t.id === drillId) ? drillId : selectedRootId;
+  const graphFocusId = drilled ? activeNodeId : undefined;
 
   const handleCreateThought = useCallback(async (title: string, body: string) => {
     if (activeNodeId) {
@@ -305,12 +287,10 @@ export function HomePage() {
     const id = pendingDeleteId;
     if (!id) return;
     setPendingDeleteId(null);
-    const target = thoughts.find((t) => t.id === id);
     removeThought(id);
-    // Don't leave any view pointing at the dead id.
-    if (id === focusedNodeId) setFocusedNodeId(target?.parentId ?? undefined);
+    // Don't leave the navigation stack pointing at the dead id.
     if (id === drillId) popDrill(1);
-  }, [pendingDeleteId, thoughts, removeThought, focusedNodeId, drillId, popDrill]);
+  }, [pendingDeleteId, removeThought, drillId, popDrill]);
 
   const pendingDelete = pendingDeleteId ? thoughts.find((t) => t.id === pendingDeleteId) : undefined;
   const pendingChildCount = pendingDeleteId
@@ -352,15 +332,11 @@ export function HomePage() {
   }, [thoughts, edgeRelationships, selectedRootId]);
 
   const visibleThoughts = useMemo(() => {
-    if (!selectedRootId) {
-      return [];
-    }
-    if (focusedNodeId) {
-      return nodesAround(focusedNodeId);
-    }
-    // Project root view: show all thoughts in the project
+    if (!selectedRootId) return [];
+    // Drilled in: the active node's neighbourhood. At the project root: everything.
+    if (drilled && activeNodeId) return nodesAround(activeNodeId);
     return thoughts;
-  }, [thoughts, selectedRootId, focusedNodeId, nodesAround]);
+  }, [thoughts, selectedRootId, drilled, activeNodeId, nodesAround]);
 
   // Mind map shows the active node + visible thoughts. Top-level thoughts hang
   // off the project root, so substitute the project id for null parents.
@@ -369,9 +345,9 @@ export function HomePage() {
   // its relationship edge instead.)
   const networkThoughts = useMemo(() => {
     if (!activeNode) return [];
-    const withParents = visibleThoughts.map((t) =>
-      t.parentId ? t : { ...t, parentId: selectedRootId ?? null },
-    );
+    const withParents = visibleThoughts
+      .filter((t) => t.id !== activeNode.id)
+      .map((t) => (t.parentId ? t : { ...t, parentId: selectedRootId ?? null }));
     return [activeNode, ...withParents];
   }, [activeNode, visibleThoughts, selectedRootId]);
 
@@ -410,27 +386,6 @@ export function HomePage() {
   }
 
   if (isMobile) {
-    // Focus: the drilled-into node (tail of the history path) or the root.
-    // The graph top sheet and the list share it, so tapping a node in the
-    // graph filters both — the same neighbourhood rule as desktop focus. The
-    // root counts as a focus target (its neighbourhood is the top-level
-    // thoughts); tapping empty graph space clears back to the full list.
-    const drillNode = drillId ? thoughts.find((t) => t.id === drillId) ?? rootNode : rootNode;
-    const drilled = !!drillPath?.length && !!drillNode;
-    const drillTargetId = (drilled && drillNode ? drillNode.id : selectedRootId) ?? undefined;
-    const drillVisible = drilled && drillNode ? nodesAround(drillNode.id) : thoughts;
-
-    // Same shape as the desktop networkThoughts: the focused node first,
-    // top-level thoughts hanging off the substituted project root.
-    const graphThoughts = drillNode
-      ? [
-          drillNode,
-          ...drillVisible
-            .filter((t) => t.id !== drillNode.id)
-            .map((t) => (t.parentId ? t : { ...t, parentId: selectedRootId ?? null })),
-        ]
-      : [];
-
     // Latch-mount the graph on first interaction, then keep it mounted and
     // merely paused when the sheet is shut. Reopening is then instant — the
     // WebGL context and computed layout survive — instead of paying a fresh
@@ -449,12 +404,12 @@ export function HomePage() {
           {mountGraph && (
             <div className="mobile-graph-sheet-inner">
               <NetworkView
-                thoughts={graphThoughts}
+                thoughts={networkThoughts}
                 nodeColors={nodeColors}
-                onSelectNode={(id) => drillInto(id)}
+                onSelectNode={drillInto}
                 onResetView={drillToRoot}
                 edgeRels={edgeRelationships}
-                focusedNodeId={drilled ? drillId : undefined}
+                focusedNodeId={graphFocusId}
                 paused={!graphOpen || sheetDragging}
               />
               {!readOnly && (
@@ -480,22 +435,17 @@ export function HomePage() {
         </button>
         <div className="mobile-screen">
           <ThoughtsList
-            thoughts={drillVisible}
-            activeNode={drillNode}
-            nodeBorderColor={(drillTargetId && nodeColors[drillTargetId]) || DEFAULT_NODE_COLOR}
-            onNodeBorderColorChange={(color) => {
-              if (!drillTargetId) return;
-              if (drillTargetId === selectedRootId) setProjectColor(drillTargetId, color);
-              else setThoughtColor(drillTargetId, color);
-            }}
-            onCreateThought={(title, body) =>
-              createThought(body, { title, parentId: drillTargetId })
-            }
+            thoughts={visibleThoughts}
+            activeNode={activeNode}
+            nodeBorderColor={(activeNodeId && nodeColors[activeNodeId]) || DEFAULT_NODE_COLOR}
+            onNodeBorderColorChange={handleColorChange}
+            onCreateThought={handleCreateThought}
             onUpdateThought={handleUpdateThought}
             onDeleteThought={requestDelete}
             onNavigateToNode={drillInto}
             onNavigateUp={drilled ? drillUp : undefined}
             onNavigateToRoot={drilled ? drillToRoot : undefined}
+            onClone={handleCloneProject}
             createFab
             readOnly={readOnly}
             allThoughts={thoughts}
@@ -530,9 +480,9 @@ export function HomePage() {
           onCreateThought={handleCreateThought}
           onUpdateThought={handleUpdateThought}
           onDeleteThought={requestDelete}
-          onNavigateToNode={handleSelectNode}
-          onNavigateUp={focusedNodeId ? handleNavigateUp : undefined}
-          onNavigateToRoot={focusedNodeId ? handleResetView : undefined}
+          onNavigateToNode={drillInto}
+          onNavigateUp={drilled ? drillUp : undefined}
+          onNavigateToRoot={drilled ? drillToRoot : undefined}
           onClone={handleCloneProject}
           readOnly={readOnly}
           allThoughts={thoughts}
@@ -543,10 +493,10 @@ export function HomePage() {
         <NetworkView
           thoughts={networkThoughts}
           nodeColors={nodeColors}
-          onSelectNode={handleSelectNode}
-          onResetView={handleResetView}
+          onSelectNode={drillInto}
+          onResetView={drillToRoot}
           edgeRels={edgeRelationships}
-          focusedNodeId={focusedNodeId}
+          focusedNodeId={graphFocusId}
         />
         {!readOnly && (
           <div className="network-controls">

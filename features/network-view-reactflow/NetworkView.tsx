@@ -1,3 +1,5 @@
+// DRAFT (React Flow, maximally OOTB) — final: apps/web/src/components/NetworkView.tsx
+//
 // Wires useThoughtGraph (build + layout, rooted at the focus) into React Flow's
 // controlled state. Focus *filtering* is HomePage's job — it narrows `thoughts`
 // to the focused neighbourhood, shared with the thought list — so this component
@@ -30,9 +32,6 @@ import './NetworkView.css';
 const nodeTypes = { thought: ThoughtNode };
 const defaultEdgeOptions = { type: 'straight' as const };
 const FIT: FitViewOptions = { padding: 0.15, duration: 400 };
-// Focused sub-graphs zoom in tighter, so their labels (absolute overlays React
-// Flow's fit can't see) overrun the viewport — give them extra breathing room.
-const FOCUS_FIT: FitViewOptions = { padding: 0.4, duration: 400 };
 
 interface Props {
   thoughts: Thought[];
@@ -68,33 +67,21 @@ function NetworkGraph({
     setEdges(graph.edges);
   }, [graph, setNodes, setEdges]);
 
-  // Re-fit only when the graph's identity changes (project/focus) — React Flow
-  // keeps the viewport across plain data ticks on its own.
+  // Re-fit only when the graph's identity changes (project/focus), and only once
+  // nodes are measured — so the fit runs *after* the new hidden flags land and
+  // frames exactly the visible set. React Flow keeps the viewport across plain
+  // data ticks on its own.
   const { fitView } = useReactFlow();
   const initialized = useNodesInitialized();
   const identity = focusedNodeId ?? `root:${thoughts.find((t) => t.isRoot)?.id ?? ''}`;
   const prevIdentity = useRef<string | null>(null);
-  const wantFit = useRef<FitViewOptions | null>(null);
-
-  // Identity changed → schedule a fit, capturing the right padding NOW (focused
-  // sub-graphs need more). Don't fit here: the new nodes aren't in React Flow's
-  // state until the setNodes effect above propagates.
   useEffect(() => {
+    if (!initialized) return;
     if (prevIdentity.current === identity) return;
     const first = prevIdentity.current === null;
     prevIdentity.current = identity;
-    if (!first) wantFit.current = focusedNodeId ? FOCUS_FIT : FIT; // first paint: `fitView` prop
-  }, [identity, focusedNodeId]);
-
-  // Run the scheduled fit once the NEW graph's nodes are in state and measured.
-  // Depends on `nodes` only (not focusedNodeId) so it fires WITH the incoming
-  // graph — never a render early, against the outgoing graph's stale state.
-  useEffect(() => {
-    if (!wantFit.current || !initialized) return;
-    const opts = wantFit.current;
-    wantFit.current = null;
-    fitView(opts);
-  }, [nodes, initialized, fitView]);
+    if (!first) fitView(FIT); // first paint is handled by the `fitView` prop
+  }, [initialized, identity, fitView]);
 
   const onNodeClick: NodeMouseHandler<ThoughtFlowNode> = useCallback(
     (_, node) => onSelectNode?.(node.id),

@@ -1,4 +1,5 @@
-/* Node visuals are now CSS. Pixel sizes here may need tuning. */
+/* DRAFT (React Flow, maximally OOTB) — final: apps/web/src/components/NetworkView.css
+ * Node visuals are now CSS. Pixel sizes here need tuning against the real app. */
 
 .network-view {
   position: absolute;
@@ -16,55 +17,46 @@
 /* ── Node ── */
 
 .tnode {
-  position: relative;
-  display: inline-block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
   user-select: none;
   cursor: pointer;
 }
 
 .tnode-dot {
-  display: block;
-  width: 28px;
-  height: 28px;
-  border: 0.5px solid var(--border2);
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border2);
   border-radius: 50%;
   box-sizing: border-box;
 }
 
 .tnode--root .tnode-dot {
-  width: 42px;
-  height: 42px;
-  border-width: 0.75px;
+  width: 20px;
+  height: 20px;
+  border-width: 2.5px;
 }
 
 .tnode-label {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 80px;
+  max-width: 120px;
   font-family: 'Syne', sans-serif;
   font-size: 9px;
   line-height: 1.15;
-  color: var(--dim); /* match the thought-body dark grey, not pure black */
+  color: #111111;
   text-align: center;
-  pointer-events: none;
-  /* Wrap at spaces (override any inherited nowrap) and, as a last resort, break
-     a stubborn over-long token — e.g. a title joined by non-breaking spaces —
-     so a title never renders as one overflowing line. */
-  white-space: normal;
-  overflow-wrap: break-word;
-  word-break: break-word;
-  /* Clamp to two lines using the browser's real font metrics. */
+  /* Clamp to two lines with an ellipsis using the browser's real font metrics —
+     replaces the char-counting word-wrap that used to run in graphModel. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow: hidden;
+  overflow-wrap: break-word;
 }
 
 .tnode--root .tnode-label {
-  width: 122px;
   font-size: 13px;
   font-weight: 600;
 }
@@ -82,11 +74,6 @@
 }
 
 /* ── Relationship (overlay) edges ── */
-/* Colour is set inline per-edge; width + fade live here so they tune instantly. */
-.react-flow__edge.rel-edge .react-flow__edge-path {
-  stroke-width: 1px;
-  opacity: 0.25;
-}
 
 .react-flow__edge.rel-edge .react-flow__edge-text {
   font-family: var(--font-mono);
