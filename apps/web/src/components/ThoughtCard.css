@@ -148,6 +148,15 @@
   font-style: italic;
 }
 
+/* Keyboard focus for the click-to-edit display elements (now role="button",
+ * tabindex=0) so keyboard users can see where "press Enter to edit" lands. */
+.thought-card-tag:focus-visible,
+.thought-card-text:focus-visible {
+  outline: 2px solid #7b6bb5;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* ─── Footer row ──────────────────────────────────────
  * Labels wrap inside their own block; the time is a sibling pinned to the
  * bottom-right, so many labels can never push it onto its own line. */

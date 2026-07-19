@@ -101,10 +101,7 @@
   gap: 8px;
 }
 
-.node-color-picker {
-  position: relative;
-}
-
+/* Trigger skin for the shared ColorDot (popover styles live in ColorDot.css). */
 .node-color-dot {
   width: 14px;
   height: 14px;
@@ -118,40 +115,6 @@
 .node-color-dot:hover {
   transform: scale(1.15);
   border-color: rgba(0, 0, 0, 0.25);
-}
-
-.node-color-swatches {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 6px;
-  padding: 8px 10px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  z-index: 10;
-}
-
-.node-color-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  padding: 0;
-  transition: transform 0.12s, border-color 0.12s;
-}
-
-.node-color-swatch:hover {
-  transform: scale(1.1);
-}
-
-.node-color-swatch--active {
-  border-color: var(--text);
-  transform: scale(1.15);
 }
 
 .thoughts-list-header-body {
@@ -434,10 +397,11 @@
   transform: rotate(180deg);
 }
 
+.thoughts-list-filter-positioner {
+  z-index: 30;
+}
+
 .thoughts-list-filter-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
   min-width: 180px;
   max-height: 240px;
   overflow-y: auto;
@@ -446,7 +410,6 @@
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   padding: 4px;
-  z-index: 30;
   display: flex;
   flex-direction: column;
   gap: 1px;

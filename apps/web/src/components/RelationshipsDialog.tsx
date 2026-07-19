@@ -1,10 +1,8 @@
 import { useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useLabels } from '../hooks/useLabels';
 import type { Thought, EdgeRelationship } from '../hooks/useThoughts';
 import { thoughtName } from '../lib/thoughtName';
-// Shared overlay/dialog chrome (.mcp-overlay, .mcp-dialog, header classes)
-import './McpDialog.css';
+import { Modal } from './Modal';
 import './RelationshipsDialog.css';
 
 interface Props {
@@ -33,8 +31,6 @@ export function RelationshipsDialog({ open, onClose, projectId, thoughts, edgeRe
     [thoughts],
   );
 
-  if (!open) return null;
-
   // The DB has a unique index on (source, target, label) for edges; block the
   // attempt up front rather than surfacing its 409 after the fact.
   const isDuplicate = Boolean(
@@ -55,104 +51,99 @@ export function RelationshipsDialog({ open, onClose, projectId, thoughts, edgeRe
     setTargetId('');
   }
 
-  return createPortal(
-    <div className="mcp-overlay" onClick={onClose}>
-      <div className="mcp-dialog rd-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="mcp-dialog-header">
-          <h2 className="mcp-dialog-title">Relationships</h2>
-          <button className="mcp-dialog-close" onClick={onClose}>&times;</button>
-        </div>
-        <p className="mcp-dialog-subtitle">
-          Define directional relationships between thoughts in this project.
-          Each relationship links a source thought to a target thought through
-          an edge label, and appears as an arrow in the graph view.
-        </p>
-
-        {/* ── Existing relationships ── */}
-        <div className="rd-list">
-          {edgeRels.length === 0 && (
-            <p className="rd-empty">No relationships yet. Create one below.</p>
-          )}
-          {edgeRels.map((rel) => (
-            <div key={rel.id} className="rd-row">
-              <span className="rd-cell rd-cell--node" title={thoughtName(thoughtById.get(rel.sourceId))}>
-                {thoughtName(thoughtById.get(rel.sourceId))}
-              </span>
-              <span className="rd-cell rd-cell--label">
-                <span
-                  className="rd-label-chip"
-                  style={rel.label ? { borderColor: rel.label.color, color: rel.label.color } : undefined}
-                >
-                  {rel.label && <span className="rd-label-dot" style={{ background: rel.label.color }} />}
-                  {rel.label?.name ?? 'unlabelled'}
-                </span>
-                <span className="rd-arrow">→</span>
-              </span>
-              <span className="rd-cell rd-cell--node" title={thoughtName(thoughtById.get(rel.targetId))}>
-                {thoughtName(thoughtById.get(rel.targetId))}
-              </span>
-              <button
-                className="rd-remove"
-                onClick={() => onRemove(rel.id)}
-                title="Delete relationship"
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      className="rd-dialog"
+      title="Relationships"
+      description="Define directional relationships between thoughts in this project.
+        Each relationship links a source thought to a target thought through
+        an edge label, and appears as an arrow in the graph view."
+    >
+      {/* ── Existing relationships ── */}
+      <div className="rd-list">
+        {edgeRels.length === 0 && (
+          <p className="rd-empty">No relationships yet. Create one below.</p>
+        )}
+        {edgeRels.map((rel) => (
+          <div key={rel.id} className="rd-row">
+            <span className="rd-cell rd-cell--node" title={thoughtName(thoughtById.get(rel.sourceId))}>
+              {thoughtName(thoughtById.get(rel.sourceId))}
+            </span>
+            <span className="rd-cell rd-cell--label">
+              <span
+                className="rd-label-chip"
+                style={rel.label ? { borderColor: rel.label.color, color: rel.label.color } : undefined}
               >
-                &times;
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {/* ── Add relationship ── */}
-        {labelsLoading ? null : edgeLabels.length === 0 ? (
-          <p className="rd-hint">
-            No edge labels in this project yet. Mark a label as an edge label
-            in the label picker (the triangle toggle) to use it here.
-          </p>
-        ) : (
-          <div className="rd-add">
-            <select
-              className="rd-select"
-              value={sourceId}
-              onChange={(e) => setSourceId(e.target.value)}
+                {rel.label && <span className="rd-label-dot" style={{ background: rel.label.color }} />}
+                {rel.label?.name ?? 'unlabelled'}
+              </span>
+              <span className="rd-arrow">→</span>
+            </span>
+            <span className="rd-cell rd-cell--node" title={thoughtName(thoughtById.get(rel.targetId))}>
+              {thoughtName(thoughtById.get(rel.targetId))}
+            </span>
+            <button
+              className="rd-remove"
+              onClick={() => onRemove(rel.id)}
+              title="Delete relationship"
             >
-              <option value="">Source…</option>
-              {sortedThoughts.map((t) => (
-                <option key={t.id} value={t.id} disabled={t.id === targetId}>
-                  {thoughtName(t)}
-                </option>
-              ))}
-            </select>
-            <select
-              className="rd-select rd-select--label"
-              value={labelId}
-              onChange={(e) => setLabelId(e.target.value)}
-            >
-              <option value="">Label…</option>
-              {edgeLabels.map((l) => (
-                <option key={l.id} value={l.id}>{l.name}</option>
-              ))}
-            </select>
-            <select
-              className="rd-select"
-              value={targetId}
-              onChange={(e) => setTargetId(e.target.value)}
-            >
-              <option value="">Target…</option>
-              {sortedThoughts.map((t) => (
-                <option key={t.id} value={t.id} disabled={t.id === sourceId}>
-                  {thoughtName(t)}
-                </option>
-              ))}
-            </select>
-            <button className="rd-add-btn" onClick={handleAdd} disabled={!canAdd}>
-              Add
+              &times;
             </button>
           </div>
-        )}
-
-        {isDuplicate && <p className="rd-hint rd-hint--duplicate">This relationship already exists.</p>}
+        ))}
       </div>
-    </div>,
-    document.body,
+
+      {/* ── Add relationship ── */}
+      {labelsLoading ? null : edgeLabels.length === 0 ? (
+        <p className="rd-hint">
+          No edge labels in this project yet. Mark a label as an edge label
+          in the label picker (the triangle toggle) to use it here.
+        </p>
+      ) : (
+        <div className="rd-add">
+          <select
+            className="rd-select"
+            value={sourceId}
+            onChange={(e) => setSourceId(e.target.value)}
+          >
+            <option value="">Source…</option>
+            {sortedThoughts.map((t) => (
+              <option key={t.id} value={t.id} disabled={t.id === targetId}>
+                {thoughtName(t)}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rd-select rd-select--label"
+            value={labelId}
+            onChange={(e) => setLabelId(e.target.value)}
+          >
+            <option value="">Label…</option>
+            {edgeLabels.map((l) => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+          <select
+            className="rd-select"
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+          >
+            <option value="">Target…</option>
+            {sortedThoughts.map((t) => (
+              <option key={t.id} value={t.id} disabled={t.id === sourceId}>
+                {thoughtName(t)}
+              </option>
+            ))}
+          </select>
+          <button className="rd-add-btn" onClick={handleAdd} disabled={!canAdd}>
+            Add
+          </button>
+        </div>
+      )}
+
+      {isDuplicate && <p className="rd-hint rd-hint--duplicate">This relationship already exists.</p>}
+    </Modal>
   );
 }

@@ -33,7 +33,7 @@ Each app has its own `package.json`.
 |----------|-------|
 | API      | NestJS 11, Drizzle ORM 0.45, Neon serverless Postgres (pgvector), Passport (JWT + Google OAuth), Zod 3 |
 | MCP      | Express 5, `jose` for JWT verification, Zod 3 (tool schemas) |
-| Web      | React 19, Vite 8, `react-force-graph-3d` + `three` |
+| Web      | React 19, Vite 8, `react-force-graph-3d` + `three`, `@base-ui/react` (headless dialogs/popovers via shared `Modal`/`ColorDot` wrappers) |
 | Embeddings | OpenRouter API (`all-mpnet-base-v2`, 768-dim vectors) |
 
 ---

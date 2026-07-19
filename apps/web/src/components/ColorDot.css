@@ -1,0 +1,38 @@
+/* Swatch popover (ColorDot.tsx) — shared by node-colour and label-colour dots. */
+
+.swatch-positioner {
+  /* Above any open dialog (.modal is 901). */
+  z-index: 1100;
+}
+
+.swatch-popup {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  animation: swatchIn 0.1s ease;
+}
+@keyframes swatchIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.1s, transform 0.1s;
+}
+.swatch:hover {
+  transform: scale(1.15);
+}
+.swatch--active {
+  border-color: var(--text);
+  transform: scale(1.15);
+}

@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useMemo, useRef, useState } from 'react';
 import { useThoughts, type Thought } from '../hooks/useThoughts';
 import { thoughtName } from '../lib/thoughtName';
 import { selfAndDescendants } from '../lib/descendants';
+import { Modal } from './Modal';
 import './ParentPicker.css';
 
 interface Props {
@@ -15,6 +15,7 @@ interface Props {
 export function ParentPicker({ thought, onClose }: Props) {
   const { thoughts, setParent } = useThoughts(thought.projectId);
   const [search, setSearch] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const blocked = useMemo(
     () => selfAndDescendants(thoughts, thought.id),
@@ -31,45 +32,39 @@ export function ParentPicker({ thought, onClose }: Props) {
     onClose();
   }
 
-  return createPortal(
-    <div className="pp-overlay" onClick={onClose}>
-      <div
-        className="pp-box"
-        role="dialog"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.key === 'Escape' && onClose()}
-      >
-        <div className="pp-header">
-          <div className="pp-title">Parent for “{thoughtName(thought)}”</div>
-          <button className="pp-close" onClick={onClose} aria-label="Close">&times;</button>
-        </div>
-        <input
-          className="pp-search"
-          placeholder="Search thoughts…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          autoFocus
-        />
-        <div className="pp-list">
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      className="pp-box"
+      title={`Parent for “${thoughtName(thought)}”`}
+      initialFocus={searchRef}
+    >
+      <input
+        ref={searchRef}
+        className="pp-search"
+        placeholder="Search thoughts…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      <div className="pp-list">
+        <button
+          className={`pp-item pp-item--top${thought.parentId === null ? ' pp-item--current' : ''}`}
+          onClick={() => pick(null)}
+        >
+          Top level
+        </button>
+        {candidates.map((t) => (
           <button
-            className={`pp-item pp-item--top${thought.parentId === null ? ' pp-item--current' : ''}`}
-            onClick={() => pick(null)}
+            key={t.id}
+            className={`pp-item${t.id === thought.parentId ? ' pp-item--current' : ''}`}
+            onClick={() => pick(t.id)}
           >
-            Top level
+            {thoughtName(t)}
           </button>
-          {candidates.map((t) => (
-            <button
-              key={t.id}
-              className={`pp-item${t.id === thought.parentId ? ' pp-item--current' : ''}`}
-              onClick={() => pick(t.id)}
-            >
-              {thoughtName(t)}
-            </button>
-          ))}
-          {candidates.length === 0 && <div className="pp-empty">No matching thoughts.</div>}
-        </div>
+        ))}
+        {candidates.length === 0 && <div className="pp-empty">No matching thoughts.</div>}
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

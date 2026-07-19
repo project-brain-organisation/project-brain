@@ -1,126 +1,31 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
-import type { Thought } from '../hooks/useThoughts';
-import { useLabels, useThoughtLabels } from '../hooks/useLabels';
-import { useWorkspaceQuery } from '../hooks/query-utils';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useThoughtNavigation } from '../contexts/ThoughtNavigationProvider';
+import { useThoughtActions } from '../hooks/useThoughtActions';
+import { useLabelFilter } from '../hooks/useLabelFilter';
 import { ThoughtCard } from './ThoughtCard';
-import { LabelPicker } from './LabelPicker';
+import { NodeHeader } from './NodeHeader';
+import { SearchBar } from './SearchBar';
 import { Fab } from './Fab';
+import { ChevronDownIcon, PlusIcon } from './icons';
 import './ThoughtsList.css';
 
-const NODE_COLORS = [
-  '#7b6bb5', '#e8a838', '#4caf50', '#e05555',
-  '#5ba4cf', '#e88bb5', '#999999',
-];
+/** `createFab` is the only prop — a layout intent (mobile uses a FAB instead of
+ *  the header "+"). Everything else comes from the domain layer. */
+export function ThoughtsList({ createFab = false }: { createFab?: boolean }) {
+  const { activeNode, visibleThoughts } = useThoughtNavigation();
+  const { create } = useThoughtActions();
+  const filter = useLabelFilter(activeNode?.projectId);
 
-interface Props {
-  thoughts: Thought[];
-  activeNode?: Thought;
-  nodeBorderColor: string;
-  onNodeBorderColorChange: (color: string) => void;
-  onCreateThought: (title: string, body: string) => Promise<Thought | void>;
-  onUpdateThought: (id: string, title?: string, body?: string) => void;
-  onDeleteThought: (id: string) => void;
-  onNavigateToNode?: (id: string) => void;
-  /** Drilled into a node: step up one level in the hierarchy. */
-  onNavigateUp?: () => void;
-  /** Drilled into a node: jump straight back to the project root. */
-  onNavigateToRoot?: () => void;
-  /** Mobile: replace the header "+" with a FAB (the screen's primary action). */
-  createFab?: boolean;
-  /** Subscribed public graph: render content but no editing affordances. */
-  readOnly?: boolean;
-  /** When set and viewing the project root, show a "clone this graph" button
-   *  next to the project name (works on own and read-only graphs alike). */
-  onClone?: () => Promise<void>;
-  /** Full project thoughts + reparent, threaded to cards for drag-to-reparent. */
-  allThoughts?: Thought[];
-  onReparent?: (childId: string, parentId: string | null) => void;
-}
-
-function CloneIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="9" y="9" width="11" height="11" rx="2" />
-      <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-    </svg>
-  );
-}
-
-function ChevronUpIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m18 15-6-6-6 6" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m21 21-4.3-4.3" />
-    </svg>
-  );
-}
-
-function ChevronDownIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  );
-}
-
-function HomeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 10.5 12 3l9 7.5" />
-      <path d="M5 9.5V20h14V9.5" />
-    </svg>
-  );
-}
-
-export function ThoughtsList({
-  thoughts,
-  activeNode,
-  nodeBorderColor,
-  onNodeBorderColorChange,
-  onCreateThought,
-  onUpdateThought,
-  onDeleteThought,
-  onNavigateToNode,
-  onNavigateUp,
-  onNavigateToRoot,
-  createFab,
-  readOnly,
-  onClone,
-  allThoughts,
-  onReparent,
-}: Props) {
   const [newThoughtId, setNewThoughtId] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [labelFilter, setLabelFilter] = useState<ReadonlySet<string>>(new Set());
-  const [labelMenuOpen, setLabelMenuOpen] = useState(false);
-  const labelMenuRef = useRef<HTMLDivElement>(null);
-  const [cloning, setCloning] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
-  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
-  const [colorPickerOpen, setColorPickerOpen] = useState(false);
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [editingBody, setEditingBody] = useState(false);
-  const [titleDraft, setTitleDraft] = useState('');
-  const [bodyDraft, setBodyDraft] = useState('');
-  const colorPickerRef = useRef<HTMLDivElement>(null);
-  const titleInputRef = useRef<HTMLInputElement>(null);
-  const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
   const cardsRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [showJump, setShowJump] = useState(false);
 
-  // WhatsApp-style jump-to-latest: a sentinel after the last card tells us
-  // whether the newest thought is in view; the margin stops boundary flicker.
+  const isProjectRoot = !!activeNode?.isRoot;
+  // At the mobile root the TopBar shows the project name, so the header is dead
+  // space — and the FAB (createFab) is the mobile tell.
+  const hideHeader = createFab && isProjectRoot;
+
   useEffect(() => {
     const root = cardsRef.current;
     const target = endRef.current;
@@ -132,428 +37,42 @@ export function ThoughtsList({
     io.observe(target);
     return () => io.disconnect();
   }, []);
-  // Labels only apply to real thoughts — the project root pseudo-node is not
-  // a taggable entity in the v2 model.
-  const isProjectRoot = !!activeNode?.isRoot;
-  // At the mobile root the TopBar already shows the project name (rename
-  // lives on the TopBar title) — the near-empty header row here was dead
-  // space, so it goes entirely; the graph handle strip took its place.
-  const hideRootTitle = !!createFab && isProjectRoot;
-  const hideHeader = hideRootTitle;
-  const { thoughtLabels, edgeRelationships, assignLabel, unassignLabel, refresh } = useThoughtLabels(
-    isProjectRoot ? undefined : activeNode?.id,
-    activeNode?.projectId,
-  );
 
-  useEffect(() => {
-    if (!colorPickerOpen) return;
-    function handleOutside(e: MouseEvent) {
-      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
-        setColorPickerOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, [colorPickerOpen]);
-
-  // ── Label filter: labels + tag relationships come from the snapshot ──
-  const projectId = activeNode?.projectId;
-  const { labels } = useLabels(projectId);
-  const snapshot = useWorkspaceQuery(projectId).data;
-
-  // Switching projects invalidates the selection (adjust-during-render
-  // pattern — an effect here would cascade a render).
-  const [filterProjectId, setFilterProjectId] = useState(projectId);
-  if (filterProjectId !== projectId) {
-    setFilterProjectId(projectId);
-    setLabelFilter(new Set());
-    setLabelMenuOpen(false);
-  }
-
-  useEffect(() => {
-    if (!labelMenuOpen) return;
-    function handleOutside(e: MouseEvent) {
-      if (labelMenuRef.current && !labelMenuRef.current.contains(e.target as Node)) {
-        setLabelMenuOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
-  }, [labelMenuOpen]);
-
-  // null = no label filter active; otherwise the ids of thoughts carrying ANY
-  // selected label (OR), which the text query then ANDs against.
-  const labelledThoughtIds = useMemo(() => {
-    if (!snapshot || labelFilter.size === 0) return null;
-    const ids = new Set<string>();
-    for (const rel of snapshot.relationships) {
-      if (rel.kind === 'tag' && labelFilter.has(rel.targetId)) ids.add(rel.sourceId);
-    }
-    return ids;
-  }, [snapshot, labelFilter]);
-
-  const toggleLabelFilter = useCallback((id: string) => {
-    setLabelFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  function openPicker(labelId?: string) {
-    setEditingLabelId(labelId ?? null);
-    setEditingEdgeId(null);
-    setPickerOpen(true);
-  }
-
-  function openEdgePicker(edgeRelId: string) {
-    setEditingLabelId(null);
-    setEditingEdgeId(edgeRelId);
-    setPickerOpen(true);
-  }
-
-  function startEditTitle() {
-    if (!activeNode) return;
-    setTitleDraft(activeNode.title);
-    setEditingTitle(true);
-    setTimeout(() => titleInputRef.current?.focus(), 0);
-  }
-
-  function commitTitle() {
-    setEditingTitle(false);
-    if (!activeNode) return;
-    const trimmed = titleDraft.trim();
-    if (trimmed !== activeNode.title) {
-      onUpdateThought(activeNode.id, trimmed, undefined);
-    }
-  }
-
-  function startEditBody() {
-    if (!activeNode) return;
-    setBodyDraft(activeNode.body);
-    setEditingBody(true);
-    setTimeout(() => {
-      if (bodyTextareaRef.current) {
-        bodyTextareaRef.current.focus();
-        bodyTextareaRef.current.style.height = 'auto';
-        bodyTextareaRef.current.style.height = bodyTextareaRef.current.scrollHeight + 'px';
-      }
-    }, 0);
-  }
-
-  function commitBody() {
-    setEditingBody(false);
-    if (!activeNode) return;
-    if (bodyDraft !== activeNode.body) {
-      onUpdateThought(activeNode.id, undefined, bodyDraft);
-    }
-  }
-
+  // The list owns create-and-focus: it remembers the new id so the card mounts
+  // in edit mode. Both the header "+" and the FAB call this.
   const handleCreate = useCallback(async () => {
-    const result = await onCreateThought('', '');
-    if (result && result.id) {
-      setNewThoughtId(result.id);
-    }
-  }, [onCreateThought]);
+    const result = await create();
+    if (result && result.id) setNewThoughtId(result.id);
+  }, [create]);
 
-  const handleUpdate = useCallback((id: string, data: { title?: string; body?: string }) => {
-    onUpdateThought(id, data.title, data.body);
-    if (id === newThoughtId) {
-      setNewThoughtId(null);
-    }
-  }, [onUpdateThought, newThoughtId]);
-
-  const query = search.trim().toLowerCase();
-  const visibleThoughts = thoughts.filter(
-    (t) =>
-      (!query ||
-        t.title.toLowerCase().includes(query) ||
-        t.body.toLowerCase().includes(query)) &&
-      (!labelledThoughtIds || labelledThoughtIds.has(t.id)),
-  );
-  const filtersActive = !!query || labelFilter.size > 0;
+  const all = visibleThoughts;
+  const visible = filter.filter(all);
+  const emptyMessage = filter.labelFilter.size > 0
+    ? 'No thoughts match the selected labels' + (filter.search.trim() ? ` and “${filter.search.trim()}”` : '') + '.'
+    : `No thoughts match “${filter.search.trim()}”.`;
 
   return (
     <div className="thoughts-list">
-      {!hideHeader && (
-      <div className="thoughts-list-header">
-        <div className="thoughts-list-header-text">
-          <div className="thoughts-list-title-row">
-            {!hideRootTitle && (editingTitle ? (
-              <input
-                ref={titleInputRef}
-                className="thoughts-list-title-input"
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={commitTitle}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitTitle();
-                  if (e.key === 'Escape') setEditingTitle(false);
-                }}
-              />
-            ) : readOnly ? (
-              <h2 className="thoughts-list-title">{activeNode?.title || 'Untitled'}</h2>
-            ) : (
-              <h2 onClick={startEditTitle} className="thoughts-list-title-editable">
-                {activeNode?.title || 'Untitled'}
-              </h2>
-            ))}
-            {!readOnly && (
-            <div className="node-color-picker" ref={colorPickerRef}>
-              <button
-                className="node-color-dot"
-                style={{ background: nodeBorderColor }}
-                onClick={() => setColorPickerOpen(!colorPickerOpen)}
-                title="Node border color"
-              />
-              {colorPickerOpen && (
-                <div className="node-color-swatches">
-                  {NODE_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      className={`node-color-swatch${c === nodeBorderColor ? ' node-color-swatch--active' : ''}`}
-                      style={{ background: c }}
-                      onClick={() => {
-                        onNodeBorderColorChange(c);
-                        setColorPickerOpen(false);
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-            )}
-            {!isProjectRoot && onNavigateUp && onNavigateToRoot && (
-              <div className="thoughts-list-nav-group">
-                <button
-                  className="thoughts-list-nav"
-                  title="Up one level"
-                  onClick={onNavigateUp}
-                >
-                  <ChevronUpIcon />
-                </button>
-                <button
-                  className="thoughts-list-nav"
-                  title="Back to project root"
-                  onClick={onNavigateToRoot}
-                >
-                  <HomeIcon />
-                </button>
-              </div>
-            )}
-            {/* The project root is deleted from the sidebar, not here. */}
-            {!isProjectRoot && !readOnly && activeNode && (
-              <button
-                className="thoughts-list-nav thoughts-list-delete"
-                title="Delete this thought"
-                onClick={() => onDeleteThought(activeNode.id)}
-              >
-                ×
-              </button>
-            )}
-            {isProjectRoot && onClone && (
-              <button
-                className="thoughts-list-clone"
-                disabled={cloning}
-                title="Clone this graph into a project you own"
-                onClick={async () => {
-                  setCloning(true);
-                  try { await onClone(); } finally { setCloning(false); }
-                }}
-              >
-                <CloneIcon />
-                <span>{cloning ? 'Cloning…' : 'Clone'}</span>
-              </button>
-            )}
-          </div>
-          {/* The project root has no persistable body in the v2 model */}
-          {!isProjectRoot && readOnly ? (
-            <p className="thoughts-list-header-body">{activeNode?.body}</p>
-          ) : !isProjectRoot && (editingBody ? (
-            <textarea
-              ref={bodyTextareaRef}
-              className="thoughts-list-body-input"
-              value={bodyDraft}
-              onChange={(e) => {
-                setBodyDraft(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = e.target.scrollHeight + 'px';
-              }}
-              onBlur={commitBody}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) commitBody();
-                if (e.key === 'Escape') setEditingBody(false);
-              }}
-              rows={1}
-            />
-          ) : (
-            <p
-              className="thoughts-list-header-body thoughts-list-body-editable"
-              onClick={startEditBody}
-            >
-              {activeNode?.body || 'Click to add a description...'}
-            </p>
-          ))}
-          {activeNode && !isProjectRoot && (
-            <div className="thoughts-list-header-labels">
-              {thoughtLabels.map((tl) => (
-                <button
-                  key={tl.id}
-                  className="thought-card-label"
-                  style={{ borderColor: tl.color, color: tl.color }}
-                  onClick={() => !readOnly && openPicker(tl.id)}
-                >
-                  <span className="thought-card-label-dot" style={{ background: tl.color }} />
-                  {tl.name}
-                </button>
-              ))}
-              {edgeRelationships.map((er) => (
-                <span key={er.id} className="thought-card-edge">
-                  <button
-                    className="thought-card-label thought-card-label--edge"
-                    style={er.label ? { borderColor: er.label.color, color: er.label.color } : undefined}
-                    onClick={() => !readOnly && openEdgePicker(er.id)}
-                  >
-                    {er.label && <span className="thought-card-label-dot" style={{ background: er.label.color }} />}
-                    {er.label?.name ?? 'edge'}
-                  </button>
-                  <button
-                    className="thought-card-edge-target"
-                    onClick={() => onNavigateToNode?.(er.targetId)}
-                    disabled={!onNavigateToNode}
-                    title={`Go to ${er.targetName}`}
-                  >
-                    → {er.targetName}
-                  </button>
-                </span>
-              ))}
-              {!readOnly && <button className="thought-card-label-add" onClick={() => openPicker()}>+</button>}
-            </div>
-          )}
-        </div>
-        {!createFab && !readOnly && (
-          <button
-            className="thoughts-list-new"
-            onClick={handleCreate}
-            title="New thought"
-          >
-            +
-          </button>
-        )}
-      </div>
-      )}
-      {pickerOpen && createPortal(
-        <LabelPicker
-          thoughtLabels={thoughtLabels}
-          sourceThoughtId={activeNode?.id ?? ''}
-          onAssign={assignLabel}
-          onUnassign={unassignLabel}
-          editingLabelId={editingLabelId}
-          editingEdgeRelId={editingEdgeId}
-          onClose={() => setPickerOpen(false)}
-          onRefresh={refresh}
-        />,
-        document.body,
-      )}
+      {!hideHeader && <NodeHeader onNew={handleCreate} />}
 
-      {thoughts.length > 0 && (
-        <div className="thoughts-list-search">
-          <SearchIcon />
-          {[...labelFilter].map((id) => {
-            const label = labels.find((l) => l.id === id);
-            return label && (
-              <button
-                key={id}
-                className="thoughts-list-filter-chip"
-                style={{ borderColor: label.color, color: label.color }}
-                title="Remove this label filter"
-                onClick={() => toggleLabelFilter(id)}
-              >
-                <span className="thought-card-label-dot" style={{ background: label.color }} />
-                {label.name}
-              </button>
-            );
-          })}
-          <input
-            type="text"
-            className="thoughts-list-search-input"
-            placeholder="Search thoughts…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {filtersActive && (
-            <button
-              className="thoughts-list-search-clear"
-              title="Clear search and filters"
-              onClick={() => {
-                setSearch('');
-                setLabelFilter(new Set());
-              }}
-            >
-              ×
-            </button>
-          )}
-          <div className="thoughts-list-filter" ref={labelMenuRef}>
-            <button
-              className={`thoughts-list-filter-toggle${labelMenuOpen ? ' thoughts-list-filter-toggle--open' : ''}`}
-              title="Filter by label"
-              onClick={() => setLabelMenuOpen(!labelMenuOpen)}
-            >
-              <ChevronDownIcon />
-            </button>
-            {labelMenuOpen && (
-              <div className="thoughts-list-filter-menu">
-                {labels.length === 0 ? (
-                  <div className="thoughts-list-filter-empty">No labels in this project yet.</div>
-                ) : (
-                  labels.map((l) => (
-                    <button
-                      key={l.id}
-                      className={`thoughts-list-filter-item${labelFilter.has(l.id) ? ' thoughts-list-filter-item--on' : ''}`}
-                      onClick={() => toggleLabelFilter(l.id)}
-                    >
-                      <span className="thought-card-label-dot" style={{ background: l.color }} />
-                      <span className="thoughts-list-filter-item-name">{l.name}</span>
-                      {labelFilter.has(l.id) && <span className="thoughts-list-filter-item-check">✓</span>}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {all.length > 0 && <SearchBar filter={filter} />}
 
       <div className="thoughts-list-cards" ref={cardsRef}>
-        {thoughts.length === 0 ? (
+        {all.length === 0 ? (
           <div className="thoughts-list-empty">No thoughts yet. Create one to get started.</div>
-        ) : visibleThoughts.length === 0 ? (
-          <div className="thoughts-list-empty">
-            {labelFilter.size > 0
-              ? 'No thoughts match the selected labels' + (query ? ` and “${search.trim()}”` : '') + '.'
-              : `No thoughts match “${search.trim()}”.`}
-          </div>
+        ) : visible.length === 0 ? (
+          <div className="thoughts-list-empty">{emptyMessage}</div>
         ) : (
-          visibleThoughts.map((thought) => (
-            <ThoughtCard
-              key={thought.id}
-              thought={thought}
-              onUpdate={handleUpdate}
-              onDelete={onDeleteThought}
-              onNavigate={onNavigateToNode}
-              autoFocusBody={thought.id === newThoughtId}
-              readOnly={readOnly}
-              allThoughts={allThoughts}
-              onReparent={onReparent}
-            />
+          visible.map((thought) => (
+            <ThoughtCard key={thought.id} thought={thought} autoFocusBody={thought.id === newThoughtId} />
           ))
         )}
         <div className="thoughts-list-end" ref={endRef} />
       </div>
+
       {showJump && (
         <button
-          className={`thoughts-list-jump${createFab && !readOnly ? ' thoughts-list-jump--above-fab' : ''}`}
+          className={`thoughts-list-jump${createFab ? ' thoughts-list-jump--above-fab' : ''}`}
           onClick={() => endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })}
           title="Scroll to latest"
           aria-label="Scroll to latest"
@@ -561,18 +80,8 @@ export function ThoughtsList({
           <ChevronDownIcon />
         </button>
       )}
-      {createFab && !readOnly && (
-        <Fab
-          className="thoughts-list-fab"
-          ariaLabel="New thought"
-          onClick={handleCreate}
-          icon={
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          }
-        />
+      {createFab && (
+        <Fab className="thoughts-list-fab" ariaLabel="New thought" onClick={handleCreate} icon={<PlusIcon />} />
       )}
     </div>
   );

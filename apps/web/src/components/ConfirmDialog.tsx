@@ -1,5 +1,4 @@
-import { useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { AlertDialog } from '@base-ui/react/alert-dialog';
 import './ConfirmDialog.css';
 
 interface Props {
@@ -11,27 +10,22 @@ interface Props {
   onCancel: () => void;
 }
 
-/** Small modal confirm for destructive actions. */
+/** Small modal confirm for destructive actions. Rendered only while pending
+ *  (see ConfirmProvider), so it mounts open; Escape cancels. */
 export function ConfirmDialog({ message, detail, confirmLabel = 'Delete', onConfirm, onCancel }: Props) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onCancel();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-
-  return createPortal(
-    <div className="confirm-overlay" onClick={onCancel}>
-      <div className="confirm-box" role="alertdialog" onClick={(e) => e.stopPropagation()}>
-        <p className="confirm-message">{message}</p>
-        {detail && <p className="confirm-detail">{detail}</p>}
-        <div className="confirm-actions">
-          <button className="confirm-cancel" onClick={onCancel}>Cancel</button>
-          <button className="confirm-danger" onClick={onConfirm}>{confirmLabel}</button>
-        </div>
-      </div>
-    </div>,
-    document.body,
+  return (
+    <AlertDialog.Root open onOpenChange={(open) => !open && onCancel()}>
+      <AlertDialog.Portal>
+        <AlertDialog.Backdrop className="confirm-backdrop" />
+        <AlertDialog.Popup className="confirm-box">
+          <AlertDialog.Title className="confirm-message">{message}</AlertDialog.Title>
+          {detail && <AlertDialog.Description className="confirm-detail">{detail}</AlertDialog.Description>}
+          <div className="confirm-actions">
+            <AlertDialog.Close className="confirm-cancel">Cancel</AlertDialog.Close>
+            <button className="confirm-danger" onClick={onConfirm}>{confirmLabel}</button>
+          </div>
+        </AlertDialog.Popup>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
   );
 }

@@ -1,55 +1,35 @@
-.pp-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
+/* Content styles + skin overrides on the shared Modal chrome (Modal.css):
+ * a compact 320px box with a small mono header. */
 
-.pp-box {
-  background: var(--surface);
+.modal.pp-box {
+  width: 320px;
+  max-width: calc(100% - 48px);
+  padding: 14px;
+  gap: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
-  padding: 14px;
-  width: 320px;
-  max-width: calc(100% - 48px);
-  display: flex;
-  flex-direction: column;
+  background: var(--surface);
+}
+
+.pp-box .modal-header {
+  margin-bottom: 0;
   gap: 10px;
 }
 
-.pp-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.pp-title {
-  flex: 1;
+.pp-box .modal-title {
   font-family: var(--font-mono);
   font-size: 11px;
+  font-weight: 400;
   letter-spacing: 0.8px;
   text-transform: uppercase;
   color: var(--dim);
   word-break: break-word;
 }
 
-.pp-close {
-  background: none;
-  border: none;
+.pp-box .modal-close {
   font-size: 20px;
-  line-height: 1;
-  color: var(--muted);
-  cursor: pointer;
   padding: 0 2px;
-  flex-shrink: 0;
-}
-
-.pp-close:hover {
-  color: var(--text);
 }
 
 .pp-search {

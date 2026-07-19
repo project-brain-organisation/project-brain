@@ -1,67 +1,7 @@
-/* Mirrors McpDialog's overlay/dialog language (see McpDialog.css). */
-.discover-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.28);
-  z-index: 900;
-}
+/* Content styles + size overrides on the shared Modal chrome (Modal.css). */
 
-.discover-dialog {
-  background: var(--surface, #f5f0e8);
-  border-radius: 12px;
-  width: 520px;
-  max-width: 90vw;
+.modal.discover-dialog {
   max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  padding: 28px;
-  box-shadow: 0 16px 56px rgba(0, 0, 0, 0.18);
-  animation: discoverIn 0.14s ease;
-  text-align: left;
-}
-@keyframes discoverIn {
-  from { opacity: 0; transform: translateY(8px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.discover-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.discover-title {
-  font-family: var(--font-body);
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text);
-  margin: 0;
-}
-
-.discover-close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  line-height: 1;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 4px;
-  flex-shrink: 0;
-}
-.discover-close:hover {
-  color: var(--text);
-}
-
-.discover-subtitle {
-  font-family: var(--font-body);
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--muted);
-  margin: 0 0 16px;
 }
 
 .discover-search {
@@ -163,12 +103,13 @@
 }
 
 @media (max-width: 768px) {
-  .discover-dialog {
+  .modal.discover-dialog {
     width: 100vw;
     max-width: 100vw;
     height: 100dvh;
     max-height: 100dvh;
     border-radius: 0;
     padding: 20px 16px calc(16px + env(safe-area-inset-bottom));
+    animation: none;
   }
 }

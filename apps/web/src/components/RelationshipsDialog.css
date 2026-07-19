@@ -1,6 +1,6 @@
-/* Builds on the shared .mcp-overlay / .mcp-dialog chrome (McpDialog.css) */
+/* Content styles + size overrides on the shared Modal chrome (Modal.css). */
 
-.rd-dialog {
+.modal.rd-dialog {
   width: 620px;
 }
 
@@ -178,16 +178,15 @@
  * these only win over the base rules above by source order. */
 @media (max-width: 768px) {
   /* Mobile keeps dialogs terse — no explanatory subtitle */
-  .rd-dialog .mcp-dialog-subtitle {
+  .modal.rd-dialog .modal-desc {
     display: none;
   }
-  .rd-dialog {
+  .modal.rd-dialog {
     width: 100vw;
     max-width: none;
     height: 100dvh;
+    max-height: none;
     border-radius: 0;
-    display: flex;
-    flex-direction: column;
     padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
     animation: none;
   }
